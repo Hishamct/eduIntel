@@ -1,85 +1,8 @@
-// import { useState } from "react";
-
-// function PasswordReset() {
-//   const [email, setEmail] = useState("");
-//   const [token, setToken] = useState("");
-//   const [newPassword, setNewPassword] = useState("");
-
-//   const handleRequestReset = (e) => {
-//     e.preventDefault();
-//     // Dummy behavior for now — real API call comes later
-//     console.log("Password reset requested for:", email);
-//     alert(`Dummy reset requested for: ${email} (check email in real version)`);
-//   };
-
-//   const handleConfirmReset = (e) => {
-//     e.preventDefault();
-//     // Dummy behavior for now — real API call comes later
-//     console.log("Password reset confirm:", { token, newPassword });
-//     alert(`Dummy password reset confirmed with token: ${token}`);
-//   };
-
-//   return (
-//     <div style={{ maxWidth: 360, margin: "80px auto", fontFamily: "sans-serif" }}>
-//       <h2>EduIntel AI — Reset Password</h2>
-
-//       <form onSubmit={handleRequestReset} style={{ marginBottom: 32 }}>
-//         <h3>Step 1: Request Reset</h3>
-//         <div style={{ marginBottom: 12 }}>
-//           <label>Email</label><br />
-//           <input
-//             type="email"
-//             value={email}
-//             onChange={(e) => setEmail(e.target.value)}
-//             required
-//             style={{ width: "100%", padding: 8 }}
-//           />
-//         </div>
-//         <button type="submit" style={{ width: "100%", padding: 10 }}>
-//           Send Reset Link
-//         </button>
-//       </form>
-
-//       <form onSubmit={handleConfirmReset}>
-//         <h3>Step 2: Confirm New Password</h3>
-//         <div style={{ marginBottom: 12 }}>
-//           <label>Reset Token</label><br />
-//           <input
-//             type="text"
-//             value={token}
-//             onChange={(e) => setToken(e.target.value)}
-//             required
-//             style={{ width: "100%", padding: 8 }}
-//           />
-//         </div>
-//         <div style={{ marginBottom: 12 }}>
-//           <label>New Password</label><br />
-//           <input
-//             type="password"
-//             value={newPassword}
-//             onChange={(e) => setNewPassword(e.target.value)}
-//             required
-//             minLength={8}
-//             style={{ width: "100%", padding: 8 }}
-//           />
-//         </div>
-//         <button type="submit" style={{ width: "100%", padding: 10 }}>
-//           Reset Password
-//         </button>
-//       </form>
-
-//       <p style={{ marginTop: 16 }}>
-//         <a href="/login">Back to login</a>
-//       </p>
-//     </div>
-//   );
-// }
-
-// export default PasswordReset;
-
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import apiClient from "../../api/client";
+import { TextField } from "../../components/ui";
+import "../../components/ui/ui.css";
 
 function PasswordReset() {
   const [email, setEmail] = useState("");
@@ -97,8 +20,7 @@ function PasswordReset() {
     try {
       const response = await apiClient.post("/auth/password-reset/request", { email });
       setRequestMessage(response.data.message);
-      // DEV ONLY: backend returns the raw token directly since email-sending isn't built yet.
-      // Auto-fill it into Step 2 so you can test the full flow without an inbox.
+
       if (response.data.dev_reset_token) {
         setToken(response.data.dev_reset_token);
       }
@@ -122,59 +44,202 @@ function PasswordReset() {
   };
 
   return (
-    <div style={{ maxWidth: 360, margin: "80px auto", fontFamily: "sans-serif" }}>
-      <h2>EduIntel AI — Reset Password</h2>
-      {error && <p style={{ color: "red" }}>{error}</p>}
-
-      <form onSubmit={handleRequestReset} style={{ marginBottom: 32 }}>
-        <h3>Step 1: Request Reset</h3>
-        {requestMessage && <p style={{ color: "green", fontSize: 14 }}>{requestMessage}</p>}
-        <div style={{ marginBottom: 12 }}>
-          <label>Email</label><br />
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            style={{ width: "100%", padding: 8 }}
-          />
+    <div
+      style={{
+        minHeight: "100vh",
+        backgroundColor: "#FAFAF7",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "24px",
+        fontFamily: "'IBM Plex Sans', sans-serif"
+      }}
+    >
+      <div
+        className="edu-card"
+        style={{
+          width: "100%",
+          maxWidth: "440px",
+          padding: "36px 32px",
+          backgroundColor: "#FFFFFF",
+          boxShadow: "0 10px 25px -5px rgba(38, 65, 94, 0.08)"
+        }}
+      >
+        {/* Brand Header */}
+        <div style={{ textAlign: "center", marginBottom: "28px" }}>
+          <h1
+            className="edu-font-heading"
+            style={{
+              fontSize: "26px",
+              fontWeight: 700,
+              color: "#26415E",
+              margin: 0,
+              letterSpacing: "-0.02em"
+            }}
+          >
+            EduIntel AI
+          </h1>
+          <p
+            style={{
+              fontSize: "11px",
+              fontWeight: 700,
+              letterSpacing: "0.05em",
+              textTransform: "uppercase",
+              color: "#5F6774",
+              marginTop: "4px"
+            }}
+          >
+            Password Recovery
+          </p>
         </div>
-        <button type="submit" style={{ width: "100%", padding: 10 }}>
-          Send Reset Link
-        </button>
-      </form>
 
-      <form onSubmit={handleConfirmReset}>
-        <h3>Step 2: Confirm New Password</h3>
-        <div style={{ marginBottom: 12 }}>
-          <label>Reset Token</label><br />
-          <input
-            type="text"
-            value={token}
-            onChange={(e) => setToken(e.target.value)}
-            required
-            style={{ width: "100%", padding: 8 }}
-          />
-        </div>
-        <div style={{ marginBottom: 12 }}>
-          <label>New Password</label><br />
-          <input
-            type="password"
-            value={newPassword}
-            onChange={(e) => setNewPassword(e.target.value)}
-            required
-            minLength={8}
-            style={{ width: "100%", padding: 8 }}
-          />
-        </div>
-        <button type="submit" style={{ width: "100%", padding: 10 }}>
-          Reset Password
-        </button>
-      </form>
+        {/* Error Notification Banner */}
+        {error && (
+          <div
+            style={{
+              padding: "10px 14px",
+              backgroundColor: "rgba(178, 58, 46, 0.1)",
+              border: "1px solid #B23A2E",
+              borderRadius: "4px",
+              color: "#B23A2E",
+              fontSize: "13px",
+              marginBottom: "20px",
+              display: "flex",
+              alignItems: "center",
+              gap: "8px"
+            }}
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: "18px" }}>
+              error
+            </span>
+            <span>{error}</span>
+          </div>
+        )}
 
-      <p style={{ marginTop: 16 }}>
-        <a href="/login">Back to login</a>
-      </p>
+        {/* Step 1: Request Reset Form */}
+        <form onSubmit={handleRequestReset} style={{ marginBottom: "28px" }}>
+          <h3
+            className="edu-font-heading"
+            style={{
+              fontSize: "14px",
+              fontWeight: 600,
+              color: "#26415E",
+              marginBottom: "12px",
+              textTransform: "uppercase",
+              letterSpacing: "0.05em"
+            }}
+          >
+            Step 1: Request Reset Link
+          </h3>
+
+          {requestMessage && (
+            <div
+              style={{
+                padding: "8px 12px",
+                backgroundColor: "rgba(60, 140, 93, 0.1)",
+                border: "1px solid #3C8C5D",
+                borderRadius: "4px",
+                color: "#3C8C5D",
+                fontSize: "12px",
+                marginBottom: "12px"
+              }}
+            >
+              {requestMessage}
+            </div>
+          )}
+
+          <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+            <TextField
+              label="Registered Email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="user@eduintel.ai"
+              icon="mail"
+              required
+            />
+            <button
+              type="submit"
+              className="edu-btn-secondary"
+              style={{ width: "100%", padding: "10px", fontSize: "11px" }}
+            >
+              Send Reset Link
+            </button>
+          </div>
+        </form>
+
+        <div style={{ height: "1px", backgroundColor: "#E5E5E1", margin: "20px 0" }} />
+
+        {/* Step 2: Confirm Reset Form */}
+        <form onSubmit={handleConfirmReset}>
+          <h3
+            className="edu-font-heading"
+            style={{
+              fontSize: "14px",
+              fontWeight: 600,
+              color: "#26415E",
+              marginBottom: "12px",
+              textTransform: "uppercase",
+              letterSpacing: "0.05em"
+            }}
+          >
+            Step 2: Set New Password
+          </h3>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+            <TextField
+              label="Reset Token"
+              type="text"
+              value={token}
+              onChange={(e) => setToken(e.target.value)}
+              placeholder="Enter received reset token"
+              icon="key"
+              required
+            />
+
+            <TextField
+              label="New Password"
+              type="password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              placeholder="••••••••"
+              icon="lock"
+              required
+            />
+
+            <button
+              type="submit"
+              className="edu-btn-primary"
+              style={{
+                width: "100%",
+                padding: "12px",
+                marginTop: "4px",
+                fontSize: "12px"
+              }}
+            >
+              Reset Password
+            </button>
+          </div>
+        </form>
+
+        {/* Navigation Footer */}
+        <div
+          style={{
+            marginTop: "24px",
+            paddingTop: "16px",
+            borderTop: "1px solid #E5E5E1",
+            textAlign: "center",
+            fontSize: "12px"
+          }}
+        >
+          <a
+            href="/login"
+            style={{ color: "#26415E", textDecoration: "none", fontWeight: 600 }}
+          >
+            ← Back to Login
+          </a>
+        </div>
+      </div>
     </div>
   );
 }

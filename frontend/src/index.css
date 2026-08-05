@@ -55,15 +55,16 @@ body {
 }
 
 #root {
-  width: 1126px;
-  max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
-  min-height: 100svh;
+  width: 100%;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
+  background-color: var(--edu-bg, #FAFAF7);
+  color: var(--edu-text, #1B2330);
+  font-family: 'IBM Plex Sans', system-ui, sans-serif;
 }
 
 h1,

@@ -7,7 +7,7 @@ const apiClient = axios.create({
   },
 });
 
-// Runs before every request — attaches the stored token, if one exists
+
 apiClient.interceptors.request.use((config) => {
   const token = localStorage.getItem("access_token");
   if (token) {

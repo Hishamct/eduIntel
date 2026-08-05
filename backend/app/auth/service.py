@@ -21,9 +21,9 @@ async def signup_user(db: AsyncSession, data: SignupRequest) -> User:
         role=data.role,
     )
     db.add(new_user)
-    await db.flush()  # assigns new_user.id without committing yet, so we can use it below
+    await db.flush() 
 
-    # Create the matching role-specific profile row
+
     if data.role == "student":
         db.add(StudentProfile(user_id=new_user.id))
     elif data.role == "teacher":
