@@ -1,6 +1,7 @@
 from langgraph.graph import StateGraph, END
 from typing import TypedDict
-from app.rag.client import get_portal_help_collection, _genai_client
+from app.rag.client import get_portal_help_collection
+from app.core.llm_client import generate_text
 
 SYSTEM_SCOPE = """You are the EduIntel AI Portal Assistant — you help students understand how to use the platform itself: submitting homework, using the doubt forum, finding study materials, checking their dashboard, and account basics like password resets.
 
@@ -73,12 +74,8 @@ Student's new message: {state['query']}
 
 Respond helpfully and concisely, grounded strictly in the help articles above."""
 
-    response = _genai_client.models.generate_content(
-        model="gemini-3.6-flash",
-        contents=prompt,
-    )
-
-    return {**state, "answer": response.text, "grounded": True}
+    answer = generate_text(prompt)
+    return {**state, "answer": answer, "grounded": True}
 
 
 graph = StateGraph(AgentState)

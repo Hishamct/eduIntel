@@ -2,7 +2,7 @@ from langgraph.graph import StateGraph, END
 from typing import TypedDict
 from datetime import date
 from google.genai import types
-from app.rag.client import _genai_client
+from app.core.llm_client import generate_text, decide_tools
 from app.core.database import AsyncSessionLocal  # adjust if named differently
 from app.admin.service import (
     get_student_teacher_counts,
@@ -122,21 +122,7 @@ Admin's new message: {state['query']}
 
 Decide which tool(s), if any, you need to call to answer this. Call as many as are relevant."""
 
-    response = _genai_client.models.generate_content(
-        model="gemini-3.6-flash",
-        contents=prompt,
-        config=types.GenerateContentConfig(tools=[ADMIN_TOOL]),
-    )
-
-    tool_calls = []
-    candidate = response.candidates[0]
-    for part in candidate.content.parts:
-        if part.function_call:
-            tool_calls.append({
-                "name": part.function_call.name,
-                "args": dict(part.function_call.args) if part.function_call.args else {},
-            })
-
+    tool_calls = decide_tools(prompt, ADMIN_TOOL)
     return {**state, "tool_calls": tool_calls}
 
 
@@ -186,12 +172,8 @@ Data retrieved from tools:
 
 Respond clearly and concisely, summarizing the relevant numbers in plain language. Don't just dump raw JSON — explain what it means. If no tools were relevant, respond according to the scope rules above."""
 
-    response = _genai_client.models.generate_content(
-        model="gemini-3.6-flash",
-        contents=prompt,
-    )
-
-    return {**state, "answer": response.text}
+    answer = generate_text(prompt)
+    return {**state, "answer": answer}
 
 
 graph = StateGraph(AgentState)

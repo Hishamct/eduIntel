@@ -11,3 +11,4 @@ bcrypt==4.0.1
 python-multipart
 python-dotenvaiofiles==25.1.0
 aiofiles==25.1.0
+groq-1.7.0
