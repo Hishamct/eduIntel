@@ -12,12 +12,17 @@ import ProgressMonitoring from "./pages/teacher/ProgressMonitoring";
 import AssignmentsGrading from "./pages/teacher/AssignmentsGrading";
 import ExamResults from "./pages/teacher/ExamResults";
 import FlaggedStudents from "./pages/teacher/FlaggedStudents";
+import TeacherStudyMaterials from "./pages/teacher/StudyMaterials";
 import AdminDashboard from "./pages/admin/AdminDashboard";
 import StudentRecords from "./pages/admin/StudentRecords";
 import RiskAlerts from "./pages/admin/RiskAlerts";
 import AcademicAnalysis from "./pages/admin/AcademicAnalysis";
 import InstitutionalReports from "./pages/admin/InstitutionalReports";
 import ProtectedRoute from "./components/ProtectedRoute";
+import TimetableView from "./pages/admin/TimetableView";
+import SalaryManagement from "./pages/admin/SalaryManagement";
+import AdminAssistant from "./pages/admin/AdminAssistant";
+
 
 
 function App() {
@@ -36,6 +41,8 @@ function App() {
             </ProtectedRoute>
           }
         />
+        
+          
         <Route
           path="/student/homework"
           element={
@@ -100,6 +107,14 @@ function App() {
             </ProtectedRoute>
           }
         />
+        <Route 
+          path="/teacher/materials" 
+          element={
+            <ProtectedRoute>
+              <TeacherStudyMaterials />
+            </ProtectedRoute>
+          } 
+        />
         <Route
           path="/teacher/flagged"
           element={
@@ -113,6 +128,14 @@ function App() {
           element={
             <ProtectedRoute>
               <AdminDashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route 
+          path="/admin/ai-assistant" 
+           element={
+            <ProtectedRoute>
+              <AdminAssistant />
             </ProtectedRoute>
           }
         />
@@ -145,6 +168,22 @@ function App() {
           element={
             <ProtectedRoute>
               <InstitutionalReports />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/timetable"
+          element={
+            <ProtectedRoute>
+              <TimetableView />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/salary"
+          element={
+            <ProtectedRoute>
+              <SalaryManagement />
             </ProtectedRoute>
           }
         />

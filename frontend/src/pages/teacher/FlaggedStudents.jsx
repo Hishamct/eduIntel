@@ -1,32 +1,100 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Sidebar, TopBar, KpiCard, DataTable, StatusBadge, Modal } from "../../components/ui";
-import { flaggedStudentsData } from "../../data/teacherMockData";
+import { Sidebar, TopBar, DataTable, StatusBadge, Modal } from "../../components/ui";
 import { logout } from "../../api/auth";
+import apiClient from "../../api/client";
 
 export default function FlaggedStudents() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [students, setStudents] = useState([]);
+  const [isLoadingStudents, setIsLoadingStudents] = useState(true);
+
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [selectedAction, setSelectedAction] = useState("");
+  const [diagnosis, setDiagnosis] = useState(null);
+  const [isDiagnosing, setIsDiagnosing] = useState(false);
+  const [diagnosisError, setDiagnosisError] = useState("");
+
+  // recommendations keyed by "subject|topic" so each topic tracks its own loading/result independently
+  const [recommendations, setRecommendations] = useState({});
+  const [loadingTopicKey, setLoadingTopicKey] = useState(null);
+
+  const [loadingWorksheetKey, setLoadingWorksheetKey] = useState(null);
+
   const navigate = useNavigate();
 
+  useEffect(() => {
+    apiClient
+      .get("/teacher/students")
+      .then((res) => setStudents(res.data))
+      .catch((err) => console.error("Failed to load students:", err))
+      .finally(() => setIsLoadingStudents(false));
+  }, []);
+
   const handleProfileSelect = (itemId) => {
-    if (itemId === "logout") {
-      logout(navigate);
+    if (itemId === "logout") logout(navigate);
+  };
+
+  const handleViewRiskAssessment = async (student) => {
+    setSelectedStudent(student);
+    setIsModalOpen(true);
+    setDiagnosis(null);
+    setDiagnosisError("");
+    setRecommendations({});
+    setIsDiagnosing(true);
+
+    try {
+      const { data } = await apiClient.get(`/ml/diagnose/${student.id}`);
+      setDiagnosis(data);
+    } catch (err) {
+      console.error("Diagnosis failed:", err);
+      setDiagnosisError("Could not generate a risk assessment for this student. They may not have enough history yet.");
+    } finally {
+      setIsDiagnosing(false);
     }
   };
 
-  const handleOpenActionModal = (student) => {
-    setSelectedStudent(student);
-    setSelectedAction(student.teacherActions[0] || "Schedule 1:1 Meeting");
-    setIsModalOpen(true);
+  const handleGetRecommendation = async (subject, topic) => {
+    const key = `${subject}|${topic}`;
+    setLoadingTopicKey(key);
+    try {
+      const { data } = await apiClient.get("/ml/recommend-topic", {
+        params: { subject, topic },
+      });
+      setRecommendations((prev) => ({ ...prev, [key]: data }));
+    } catch (err) {
+      console.error("Recommendation fetch failed:", err);
+      setRecommendations((prev) => ({
+        ...prev,
+        [key]: { recommendation: "Could not fetch a recommendation right now. Please try again." },
+      }));
+    } finally {
+      setLoadingTopicKey(null);
+    }
   };
 
-  const handleExecuteAction = () => {
-    if (!selectedStudent || !selectedAction) return;
-    alert(`Action "${selectedAction}" initiated for ${selectedStudent.name}.`);
-    setIsModalOpen(false);
+  const handleGenerateWorksheet = async (subject, topic) => {
+    const key = `${subject}|${topic}`;
+    setLoadingWorksheetKey(key);
+    try {
+      const response = await apiClient.get("/ml/generate-worksheet", {
+        params: { subject, topic, student_name: selectedStudent?.name },
+        responseType: "blob",
+      });
+      const blobUrl = window.URL.createObjectURL(new Blob([response.data], { type: "application/pdf" }));
+      const link = document.createElement("a");
+      link.href = blobUrl;
+      link.download = `${topic.replace(/\s+/g, "_")}_worksheet.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => window.URL.revokeObjectURL(blobUrl), 10000);
+    } catch (err) {
+      console.error("Worksheet generation failed:", err);
+      alert("Could not generate the worksheet. Please try again.");
+    } finally {
+      setLoadingWorksheetKey(null);
+    }
   };
 
   const columns = [
@@ -35,70 +103,35 @@ export default function FlaggedStudents() {
       label: "Student Name",
       sortable: true,
       render: (row) => (
-        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-          <div
-            style={{
-              width: "32px",
-              height: "32px",
-              borderRadius: "50%",
-              backgroundColor: "rgba(178, 58, 46, 0.1)",
-              color: "#B23A2E",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontWeight: 700,
-              fontSize: "12px",
-              fontFamily: "var(--font-heading)"
-            }}
-          >
-            {row.avatarInitials}
-          </div>
-          <div>
-            <span style={{ fontWeight: 600, color: "#1B2330", display: "block" }}>{row.name}</span>
-            <span style={{ fontSize: "11px", color: "#5F6774" }}>{row.id} • {row.locality}</span>
-          </div>
+        <div>
+          <span style={{ fontWeight: 600, color: "#1B2330", display: "block" }}>{row.name || "Unnamed"}</span>
+          <span style={{ fontSize: "11px", color: "#5F6774" }}>{row.email}</span>
         </div>
-      )
+      ),
     },
-    { key: "classSection", label: "Class / Section", sortable: true },
     {
-      key: "status",
-      label: "Risk Level",
+      key: "classSection",
+      label: "Class / Section",
       sortable: true,
-      render: (row) => (
-        <StatusBadge
-          variant={row.statusVariant}
-          label={row.statusLabel}
-        />
-      )
+      render: (row) => `${row.grade || "-"}-${row.section || "-"}`,
     },
-    {
-      key: "flagReason",
-      label: "Academic / Attendance Reason",
-      sortable: false,
-      render: (row) => (
-        <span style={{ color: "#B23A2E", fontWeight: 500, fontSize: "13px" }}>
-          {row.flagReason}
-        </span>
-      )
-    },
-    { key: "daysFlagged", label: "Flagged Date", sortable: true },
+    { key: "roll_number", label: "Roll No.", sortable: true },
     {
       key: "actions",
-      label: "Teacher Action",
+      label: "Risk Assessment",
       sortable: false,
       render: (row) => (
         <div style={{ textAlign: "right" }}>
           <button
-            onClick={() => handleOpenActionModal(row)}
+            onClick={() => handleViewRiskAssessment(row)}
             className="edu-btn-accent"
             style={{ padding: "6px 12px", fontSize: "11px" }}
           >
-            Take Action
+            View Risk Assessment
           </button>
         </div>
-      )
-    }
+      ),
+    },
   ];
 
   return (
@@ -122,140 +155,167 @@ export default function FlaggedStudents() {
         />
 
         <main className="edu-page-content">
-          {/* Header Bar */}
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "flex-end",
-              marginBottom: "24px",
-              flexWrap: "wrap",
-              gap: "12px"
-            }}
-          >
-            <div>
-              <span
-                style={{
-                  fontSize: "11px",
-                  fontWeight: 700,
-                  letterSpacing: "0.05em",
-                  color: "#5F6774",
-                  textTransform: "uppercase"
-                }}
-              >
-                CLASSROOM ALERTS
-              </span>
-              <h2
-                className="edu-font-heading"
-                style={{ fontSize: "24px", fontWeight: 600, color: "#1B2330", margin: "4px 0 0 0" }}
-              >
-                Flagged Students
-              </h2>
-              <p style={{ fontSize: "14px", color: "#5F6774", margin: "4px 0 0 0" }}>
-                Review students with active academic or attendance alerts requiring teacher intervention.
-              </p>
-            </div>
+          <div style={{ marginBottom: "24px" }}>
+            <span
+              style={{
+                fontSize: "11px",
+                fontWeight: 700,
+                letterSpacing: "0.05em",
+                color: "#5F6774",
+                textTransform: "uppercase",
+              }}
+            >
+              CLASSROOM INTELLIGENCE
+            </span>
+            <h2
+              className="edu-font-heading"
+              style={{ fontSize: "24px", fontWeight: 600, color: "#1B2330", margin: "4px 0 0 0" }}
+            >
+              Flagged Students
+            </h2>
+            <p style={{ fontSize: "14px", color: "#5F6774", margin: "4px 0 0 0" }}>
+              Select a student to run an on-demand AI risk assessment based on their attendance, homework, and exam history.
+            </p>
           </div>
 
-          {/* KPI Stat Cards Row */}
-          <div className="edu-kpi-grid" style={{ marginBottom: "24px" }}>
-            <KpiCard
-              title="Total Flagged Students"
-              value={flaggedStudentsData.length}
-              trend="Action Required"
-              trendDirection="down"
-              progressPercent={100}
-              progressColor="#B23A2E"
+          {isLoadingStudents ? (
+            <p style={{ fontSize: "13px", color: "#5F6774" }}>Loading students...</p>
+          ) : (
+            <DataTable
+              title="Students"
+              columns={columns}
+              data={students}
+              pageSize={10}
             />
-            <KpiCard
-              title="Attendance Alerts (<75%)"
-              value="2"
-              trend="Requires Notice"
-              trendDirection="down"
-              progressPercent={66}
-              progressColor="#B23A2E"
-            />
-            <KpiCard
-              title="Academic Score Drops"
-              value="2"
-              trend="Grade Drop > 15%"
-              trendDirection="down"
-              progressPercent={66}
-              progressColor="#D9922E"
-            />
-          </div>
-
-          {/* Flagged Students Data Table */}
-          <DataTable
-            title="Active Academic & Attendance Risk Registry"
-            columns={columns}
-            data={flaggedStudentsData}
-            pageSize={5}
-          />
+          )}
         </main>
       </div>
 
-      {/* Action Selection Modal (Manual Options Menu) */}
       {selectedStudent && (
         <Modal
           isOpen={isModalOpen}
           onClose={() => setIsModalOpen(false)}
-          title={`Initiate Intervention: ${selectedStudent.name}`}
-          icon="warning"
-          iconVariant="danger"
-          primaryLabel="EXECUTE ACTION"
-          onPrimary={handleExecuteAction}
-          secondaryLabel="CANCEL"
-          onSecondary={() => setIsModalOpen(false)}
+          title={`Risk Assessment: ${selectedStudent.name || selectedStudent.email}`}
+          icon="analytics"
+          iconVariant={diagnosis?.is_at_risk ? "danger" : "success"}
+          primaryLabel="CLOSE"
+          onPrimary={() => setIsModalOpen(false)}
+          secondaryLabel=""
           footerNote={`STUDENT ID: ${selectedStudent.id}`}
           description={
             <div style={{ textAlign: "left" }}>
-              <div style={{ padding: "12px", backgroundColor: "#FAFAF7", borderLeft: "4px solid #B23A2E", marginBottom: "16px" }}>
-                <p style={{ fontSize: "11px", fontWeight: 700, color: "#5F6774", textTransform: "uppercase", margin: "0 0 4px 0" }}>
-                  Academic Trigger Reason
+              {isDiagnosing && (
+                <p style={{ fontSize: "13px", color: "#5F6774", fontStyle: "italic" }}>
+                  Running risk assessment...
                 </p>
-                <p style={{ fontSize: "13px", fontWeight: 600, color: "#B23A2E", margin: 0 }}>
-                  {selectedStudent.flagReason}
-                </p>
-              </div>
+              )}
 
-              <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginBottom: "16px" }}>
-                <label style={{ fontSize: "11px", fontWeight: 700, color: "#5F6774", textTransform: "uppercase" }}>
-                  Select Manual Teacher Action:
-                </label>
-                {selectedStudent.teacherActions.map((actionText) => (
-                  <label
-                    key={actionText}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "10px",
-                      padding: "10px 14px",
-                      borderRadius: "4px",
-                      border: `1px solid ${selectedAction === actionText ? "#26415E" : "#E5E5E1"}`,
-                      backgroundColor: selectedAction === actionText ? "rgba(38, 65, 94, 0.05)" : "#FFFFFF",
-                      cursor: "pointer",
-                      fontSize: "13px",
-                      fontWeight: selectedAction === actionText ? 600 : 400,
-                      color: "#1B2330"
-                    }}
-                  >
-                    <input
-                      type="radio"
-                      name="teacherActionChoice"
-                      value={actionText}
-                      checked={selectedAction === actionText}
-                      onChange={(e) => setSelectedAction(e.target.value)}
-                      style={{ accentColor: "#26415E" }}
+              {diagnosisError && (
+                <p style={{ fontSize: "13px", color: "#B23A2E" }}>{diagnosisError}</p>
+              )}
+
+              {diagnosis && (
+                <>
+                  <div style={{ marginBottom: "16px" }}>
+                    <StatusBadge
+                      variant={diagnosis.is_at_risk ? "flagged-at-risk" : "on-track"}
+                      label={diagnosis.is_at_risk ? "AT RISK" : "NOT CURRENTLY AT RISK"}
                     />
-                    {actionText}
-                  </label>
-                ))}
-              </div>
+                    {diagnosis.risk_probability !== null && (
+                      <span style={{ fontSize: "12px", color: "#5F6774", marginLeft: "10px" }}>
+                        Confidence: {(diagnosis.risk_probability * 100).toFixed(0)}%
+                      </span>
+                    )}
+                  </div>
 
-              <p style={{ fontSize: "12px", color: "#5F6774", margin: 0 }}>
-                Guardian: <strong>{selectedStudent.guardianName}</strong> ({selectedStudent.guardianPhone})
-              </p>
+                  {diagnosis.contributing_factors?.length > 0 && (
+                    <div style={{ marginBottom: "16px" }}>
+                      <p style={{ fontSize: "11px", fontWeight: 700, color: "#5F6774", textTransform: "uppercase", margin: "0 0 8px 0" }}>
+                        Academic / Attendance Factors
+                      </p>
+                      {diagnosis.contributing_factors.map((f, idx) => (
+                        <div
+                          key={idx}
+                          style={{
+                            padding: "10px 12px",
+                            backgroundColor: "#FAFAF7",
+                            borderLeft: "4px solid #B23A2E",
+                            marginBottom: "6px",
+                            fontSize: "13px",
+                            color: "#1B2330",
+                          }}
+                        >
+                          {f.detail}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {diagnosis.broadly_weak_across_subjects && (
+                    <p style={{ fontSize: "12px", color: "#D9922E", fontWeight: 600, marginBottom: "16px" }}>
+                      This student shows weakness broadly across most subjects, not one isolated topic ({diagnosis.total_weak_topic_count} topics flagged).
+                    </p>
+                  )}
+
+                  {diagnosis.top_weak_topics?.length > 0 && (
+                    <div>
+                      <p style={{ fontSize: "11px", fontWeight: 700, color: "#5F6774", textTransform: "uppercase", margin: "0 0 8px 0" }}>
+                        Top Weak Topics
+                      </p>
+                      {diagnosis.top_weak_topics.map((wt) => {
+                        const key = `${wt.subject}|${wt.topic}`;
+                        const rec = recommendations[key];
+                        const isLoadingRec = loadingTopicKey === key;
+                        const isLoadingWorksheet = loadingWorksheetKey === key;
+
+                        return (
+                          <div
+                            key={key}
+                            style={{
+                              border: "1px solid #E5E5E1",
+                              borderRadius: "6px",
+                              padding: "12px",
+                              marginBottom: "10px",
+                            }}
+                          >
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
+                              <div>
+                                <span style={{ fontWeight: 600, fontSize: "13px", color: "#1B2330" }}>{wt.topic}</span>
+                                <span style={{ fontSize: "11px", color: "#5F6774", marginLeft: "6px" }}>({wt.subject})</span>
+                              </div>
+                              <div style={{ display: "flex", gap: "8px" }}>
+                                {!rec && (
+                                  <button
+                                    onClick={() => handleGetRecommendation(wt.subject, wt.topic)}
+                                    disabled={isLoadingRec}
+                                    className="edu-btn-secondary"
+                                    style={{ padding: "5px 10px", fontSize: "11px", opacity: isLoadingRec ? 0.6 : 1 }}
+                                  >
+                                    {isLoadingRec ? "Loading..." : "Get Study Recommendations"}
+                                  </button>
+                                )}
+                                <button
+                                  onClick={() => handleGenerateWorksheet(wt.subject, wt.topic)}
+                                  disabled={isLoadingWorksheet}
+                                  className="edu-btn-accent"
+                                  style={{ padding: "5px 10px", fontSize: "11px", opacity: isLoadingWorksheet ? 0.6 : 1 }}
+                                >
+                                  {isLoadingWorksheet ? "Generating..." : "Generate Worksheet"}
+                                </button>
+                              </div>
+                            </div>
+                            {rec && (
+                              <p style={{ fontSize: "12px", color: "#1B2330", marginTop: "8px", lineHeight: 1.5, whiteSpace: "pre-line" }}>
+                                {rec.recommendation}
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           }
         />

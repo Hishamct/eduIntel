@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Sidebar, TopBar, KpiCard, StatusBadge } from "../../components/ui";
 import { selfEvaluationData } from "../../data/studentMockData";
 import { logout } from "../../api/auth";
+import PortalAssistantWidget from "../../components/PortalAssistantWidget";
 
 export default function SelfEvaluation() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -183,6 +184,8 @@ export default function SelfEvaluation() {
           </div>
         </main>
       </div>
+
+      <PortalAssistantWidget />
     </div>
   );
 }

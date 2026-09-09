@@ -1,13 +1,41 @@
-import { useState, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { Sidebar, TopBar, StudyMaterialCard } from "../../components/ui";
-import { studyMaterialsListData } from "../../data/studentMockData";
 import { logout } from "../../api/auth";
+import apiClient from "../../api/client";
+import PortalAssistantWidget from "../../components/PortalAssistantWidget";
+
+function mapMaterial(m) {
+  return {
+    id: m.id,
+    title: m.title,
+    subject: m.subject,
+    fileType: m.original_filename.split(".").pop().toUpperCase(),
+    originalFilename: m.original_filename,
+    date: new Date(m.created_at).toLocaleDateString("en-IN", {
+      day: "2-digit", month: "short", year: "numeric",
+    }),
+    fileSize: "—", // not tracked in backend yet
+  };
+}
 
 export default function StudyMaterials() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [selectedSubject, setSelectedSubject] = useState("ALL");
+  const [materials, setMaterials] = useState([]);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const fetchMaterials = async () => {
+      try {
+        const res = await apiClient.get("/student/study-materials");
+        setMaterials(res.data.map(mapMaterial));
+      } catch (err) {
+        console.error("Failed to load study materials:", err);
+      }
+    };
+    fetchMaterials();
+  }, []);
 
   const handleProfileSelect = (itemId) => {
     if (itemId === "logout") {
@@ -16,18 +44,41 @@ export default function StudyMaterials() {
   };
 
   const filteredMaterials = useMemo(() => {
-    return studyMaterialsListData.filter((item) => {
-      return selectedSubject === "ALL" || item.subject === selectedSubject;
+    return materials.filter((item) => {
+      return selectedSubject === "ALL" || item.subject.toUpperCase() === selectedSubject;
     });
-  }, [selectedSubject]);
+  }, [materials, selectedSubject]);
 
-  const handleDownload = (material) => {
-    alert(`Downloading ${material.title} (${material.fileSize})`);
-  };
+  const handleFileAction = async (material, action) => {
+  try {
+    const res = await apiClient.get(
+      `/student/study-materials/${material.id}/file`,
+      { responseType: "blob" }
+    );
 
-  const handleView = (material) => {
-    alert(`Opening viewer for ${material.title}`);
-  };
+    const contentType = res.headers["content-type"] || "application/octet-stream";
+    const blobUrl = window.URL.createObjectURL(new Blob([res.data], { type: contentType }));
+
+    if (action === "view") {
+      window.open(blobUrl, "_blank");
+    } else {
+      const link = document.createElement("a");
+      link.href = blobUrl;
+      link.download = material.originalFilename || material.title;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+
+    setTimeout(() => window.URL.revokeObjectURL(blobUrl), 10000);
+  } catch (err) {
+    console.error(`Failed to ${action} file:`, err);
+    alert(`Could not ${action} the file. Please try again.`);
+  }
+};
+
+  const handleDownload = (material) => handleFileAction(material, "download");
+  const handleView = (material) => handleFileAction(material, "view");
 
   const subjects = ["ALL", "MATHEMATICS", "PHYSICS", "CHEMISTRY", "COMPUTER SCIENCE"];
 
@@ -52,7 +103,6 @@ export default function StudyMaterials() {
         />
 
         <main className="edu-page-content">
-          {/* Header Bar */}
           <div
             style={{
               display: "flex",
@@ -87,7 +137,6 @@ export default function StudyMaterials() {
             </div>
           </div>
 
-          {/* Subject Filter Pills */}
           <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "24px" }}>
             {subjects.map((sub) => {
               const isSelected = selectedSubject === sub;
@@ -114,23 +163,28 @@ export default function StudyMaterials() {
             })}
           </div>
 
-          {/* Cards Grid */}
-          <div className="edu-kpi-grid">
-            {filteredMaterials.map((material) => (
-              <StudyMaterialCard
-                key={material.id}
-                title={material.title}
-                subject={material.subject}
-                fileType={material.fileType}
-                date={material.date}
-                fileSize={material.fileSize}
-                onDownload={() => handleDownload(material)}
-                onView={() => handleView(material)}
-              />
-            ))}
-          </div>
+          {filteredMaterials.length === 0 ? (
+            <p style={{ fontSize: "13px", color: "#5F6774" }}>No study materials available yet.</p>
+          ) : (
+            <div className="edu-kpi-grid">
+              {filteredMaterials.map((material) => (
+                <StudyMaterialCard
+                  key={material.id}
+                  title={material.title}
+                  subject={material.subject}
+                  fileType={material.fileType}
+                  date={material.date}
+                  fileSize={material.fileSize}
+                  onDownload={() => handleDownload(material)}
+                  onView={() => handleView(material)}
+                />
+              ))}
+            </div>
+          )}
         </main>
       </div>
+
+      <PortalAssistantWidget />
     </div>
   );
 }

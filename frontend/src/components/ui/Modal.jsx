@@ -13,7 +13,7 @@ import './ui.css';
  * @param {'warning'|'danger'|'info'|'success'} [props.iconVariant='warning']
  * @param {string} [props.primaryLabel="CONFIRM ACTION"]
  * @param {function(): void} [props.onPrimary]
- * @param {string} [props.secondaryLabel="CANCEL"]
+ * @param {string} [props.secondaryLabel="CANCEL"] - Pass "" or null to hide the secondary button entirely (e.g. for read-only/info modals with a single close action)
  * @param {function(): void} [props.onSecondary]
  * @param {string} [props.footerNote] - Small metadata note displayed at the bottom
  */
@@ -178,19 +178,21 @@ export default function Modal({
             >
               {primaryLabel}
             </button>
-            <button
-              onClick={onSecondary || onClose}
-              className="edu-btn-secondary"
-              style={{
-                width: '100%',
-                padding: '12px',
-                border: '1px solid #E5E5E1',
-                color: '#5F6774',
-                fontSize: '11px'
-              }}
-            >
-              {secondaryLabel}
-            </button>
+            {secondaryLabel && (
+              <button
+                onClick={onSecondary || onClose}
+                className="edu-btn-secondary"
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  border: '1px solid #E5E5E1',
+                  color: '#5F6774',
+                  fontSize: '11px'
+                }}
+              >
+                {secondaryLabel}
+              </button>
+            )}
           </div>
         </div>
 

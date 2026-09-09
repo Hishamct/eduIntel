@@ -5,6 +5,44 @@ import { logout } from "../../api/auth";
 import { Sidebar, TopBar, KpiCard } from "../../components/ui";
 import "../../components/ui/ui.css";
 
+function PreviewCard({ icon, title, children }) {
+  return (
+    <div
+      className="edu-card"
+      style={{
+        padding: "20px",
+        border: "1px dashed #C9C9C3",
+        backgroundColor: "#FAFAF8",
+      }}
+    >
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "12px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <span className="material-symbols-outlined" style={{ fontSize: "20px", color: "#92ADCF" }}>
+            {icon}
+          </span>
+          <p style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase", color: "#5F6774", margin: 0 }}>
+            {title}
+          </p>
+        </div>
+        <span
+          style={{
+            fontSize: "9px",
+            fontWeight: 700,
+            letterSpacing: "0.05em",
+            color: "#92ADCF",
+            border: "1px solid #92ADCF",
+            borderRadius: "3px",
+            padding: "2px 6px",
+          }}
+        >
+          PREVIEW
+        </span>
+      </div>
+      {children}
+    </div>
+  );
+}
+
 function AdminDashboard() {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
@@ -63,7 +101,6 @@ function AdminDashboard() {
 
   return (
     <div className="edu-layout-container">
-      {/* Sidebar Navigation */}
       <Sidebar
         userRole="admin"
         activeId="dashboard"
@@ -78,7 +115,6 @@ function AdminDashboard() {
         }}
       />
 
-      {/* Main Content Shell */}
       <div className="edu-main-wrapper">
         <TopBar
           user={{ name: "Dr. Aria Vance", role: "Super Admin" }}
@@ -86,7 +122,6 @@ function AdminDashboard() {
         />
 
         <main className="edu-page-content">
-          {/* Header Bar */}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: "24px", flexWrap: "wrap", gap: "12px" }}>
             <div>
               <span style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.05em", color: "#5F6774", textTransform: "uppercase" }}>
@@ -98,7 +133,6 @@ function AdminDashboard() {
             </div>
           </div>
 
-          {/* Welcome Banner */}
           <div
             className="edu-card"
             style={{
@@ -113,12 +147,11 @@ function AdminDashboard() {
             </p>
           </div>
 
-          {/* KPI Stat Cards Grid */}
           <div className="edu-kpi-grid">
             <KpiCard
               title="Total Students"
               value={data.total_students}
-              trend="+3.2%"
+              trend="Enrolled"
               trendDirection="up"
               progressPercent={75}
               progressColor="#26415E"
@@ -133,14 +166,12 @@ function AdminDashboard() {
               progressColor="#26415E"
             />
 
-            <KpiCard
-              title="Revenue This Month"
-              value={`₹${data.revenue_this_month.toLocaleString()}`}
-              trend="+8.4%"
-              trendDirection="up"
-              progressPercent={84}
-              progressColor="#C97A2B"
-            />
+            <PreviewCard icon="payments" title="Revenue This Month">
+              <p style={{ fontSize: "22px", fontWeight: 700, color: "#B7BEC7", margin: "0 0 4px 0" }}>₹--,---</p>
+              <p style={{ fontSize: "12px", color: "#92ADCF", margin: 0 }}>
+                Fee & payment tracking is not yet built — no revenue data source exists.
+              </p>
+            </PreviewCard>
           </div>
         </main>
       </div>

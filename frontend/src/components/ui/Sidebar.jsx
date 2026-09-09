@@ -18,16 +18,20 @@ import './ui.css';
 export const PORTAL_NAV_ITEMS = {
   admin: [
     { id: 'dashboard', label: 'Dashboard', icon: 'dashboard' },
+    { id: 'ai-assistant', label: 'AI Assistant', icon: 'smart_toy' },
     { id: 'students', label: 'Student Records', icon: 'group' },
     { id: 'analysis', label: 'Academic Analysis', icon: 'analytics' },
     { id: 'alerts', label: 'Risk Alerts', icon: 'warning' },
     { id: 'reports', label: 'Institutional Reports', icon: 'description' },
+    { id: 'timetable', label: 'Timetable', icon: 'calendar_month' },
+    { id: 'salary', label: 'Salary Management', icon: 'payments' },
     { id: 'settings', label: 'Settings', icon: 'settings' }
   ],
   teacher: [
     { id: 'dashboard', label: 'Dashboard', icon: 'dashboard' },
     { id: 'progress', label: 'Progress Monitoring', icon: 'monitoring' },
     { id: 'grading', label: 'Assignments & Grading', icon: 'assignment' },
+    { id: 'materials', label: 'Study Materials', icon: 'menu_book' },
     { id: 'exams', label: 'Exam Results', icon: 'grade' },
     { id: 'flagged', label: 'Flagged Students', icon: 'flag' },
     { id: 'settings', label: 'Settings', icon: 'settings' }

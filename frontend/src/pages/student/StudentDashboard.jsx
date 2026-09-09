@@ -4,6 +4,56 @@ import apiClient from "../../api/client";
 import { logout } from "../../api/auth";
 import { Sidebar, TopBar, KpiCard, StatusBadge } from "../../components/ui";
 import "../../components/ui/ui.css";
+import PortalAssistantWidget from "../../components/PortalAssistantWidget";
+
+function timeAgo(timestamp) {
+  const diffMs = Date.now() - new Date(timestamp).getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  if (diffMins < 60) return `${diffMins}m ago`;
+  const diffHours = Math.floor(diffMins / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+  const diffDays = Math.floor(diffHours / 24);
+  return `${diffDays}d ago`;
+}
+
+function PreviewCard({ icon, title, children }) {
+  return (
+    <div
+      className="edu-card"
+      style={{
+        padding: "20px",
+        border: "1px dashed #C9C9C3",
+        backgroundColor: "#FAFAF8",
+        position: "relative",
+      }}
+    >
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "12px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <span className="material-symbols-outlined" style={{ fontSize: "20px", color: "#92ADCF" }}>
+            {icon}
+          </span>
+          <p style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase", color: "#5F6774", margin: 0 }}>
+            {title}
+          </p>
+        </div>
+        <span
+          style={{
+            fontSize: "9px",
+            fontWeight: 700,
+            letterSpacing: "0.05em",
+            color: "#92ADCF",
+            border: "1px solid #92ADCF",
+            borderRadius: "3px",
+            padding: "2px 6px",
+          }}
+        >
+          PREVIEW
+        </span>
+      </div>
+      {children}
+    </div>
+  );
+}
 
 function StudentDashboard() {
   const [data, setData] = useState(null);
@@ -63,7 +113,6 @@ function StudentDashboard() {
 
   return (
     <div className="edu-layout-container">
-      {/* Sidebar Navigation */}
       <Sidebar
         userRole="student"
         activeId="dashboard"
@@ -78,7 +127,6 @@ function StudentDashboard() {
         }}
       />
 
-      {/* Main Content Shell */}
       <div className="edu-main-wrapper">
         <TopBar
           user={{ name: "Student Portal", role: "Student" }}
@@ -86,7 +134,6 @@ function StudentDashboard() {
         />
 
         <main className="edu-page-content">
-          {/* Header Bar */}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: "24px", flexWrap: "wrap", gap: "12px" }}>
             <div>
               <span style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.05em", color: "#5F6774", textTransform: "uppercase" }}>
@@ -96,9 +143,26 @@ function StudentDashboard() {
                 Overview & Academic Status
               </h2>
             </div>
+            <div style={{ display: "flex", gap: "10px" }}>
+              <button
+                onClick={() => navigate("/student/homework")}
+                className="edu-btn-secondary"
+                style={{ display: "flex", alignItems: "center", gap: "6px", padding: "8px 16px" }}
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: "16px" }}>upload_file</span>
+                UPLOAD HOMEWORK
+              </button>
+              <button
+                onClick={() => navigate("/student/doubts")}
+                className="edu-btn-primary"
+                style={{ display: "flex", alignItems: "center", gap: "6px", padding: "8px 16px" }}
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: "16px" }}>forum</span>
+                ASK A DOUBT
+              </button>
+            </div>
           </div>
 
-          {/* Welcome Banner */}
           <div
             className="edu-card"
             style={{
@@ -113,7 +177,6 @@ function StudentDashboard() {
             </p>
           </div>
 
-          {/* KPI Stat Cards Grid */}
           <div className="edu-kpi-grid">
             <KpiCard
               title="Pending Homework"
@@ -148,8 +211,73 @@ function StudentDashboard() {
               </p>
             </div>
           </div>
+
+          {/* Recent Activity + Preview Cards Grid */}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 340px), 1fr))",
+              gap: "20px",
+              marginTop: "24px",
+            }}
+          >
+            {/* Recent Activity — real data */}
+            <div className="edu-card" style={{ padding: "20px" }}>
+              <h4 className="edu-font-heading" style={{ fontSize: "16px", fontWeight: 600, color: "#1B2330", margin: "0 0 14px 0" }}>
+                Recent Activity
+              </h4>
+              {data.recent_activity && data.recent_activity.length > 0 ? (
+                <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                  {data.recent_activity.map((item, idx) => (
+                    <div key={idx} style={{ display: "flex", alignItems: "flex-start", gap: "10px" }}>
+                      <span
+                        className="material-symbols-outlined"
+                        style={{
+                          fontSize: "16px",
+                          color: item.type === "homework" ? "#26415E" : "#D9922E",
+                          marginTop: "2px",
+                        }}
+                      >
+                        {item.type === "homework" ? "description" : "help"}
+                      </span>
+                      <div>
+                        <p style={{ fontSize: "13px", color: "#1B2330", margin: 0 }}>{item.text}</p>
+                        <p style={{ fontSize: "11px", color: "#5F6774", margin: "2px 0 0 0" }}>{timeAgo(item.timestamp)}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p style={{ fontSize: "13px", color: "#5F6774" }}>No recent activity yet.</p>
+              )}
+            </div>
+
+            {/* Mock preview cards */}
+            <PreviewCard icon="event_available" title="Attendance">
+              <p style={{ fontSize: "22px", fontWeight: 700, color: "#B7BEC7", margin: "0 0 4px 0" }}>--.-%</p>
+              <p style={{ fontSize: "12px", color: "#92ADCF", margin: 0 }}>
+                Live attendance tracking unlocks once the admin portal is connected.
+              </p>
+            </PreviewCard>
+
+            <PreviewCard icon="event" title="Upcoming Exams">
+              <p style={{ fontSize: "13px", color: "#B7BEC7", margin: "0 0 4px 0" }}>No exam data yet</p>
+              <p style={{ fontSize: "12px", color: "#92ADCF", margin: 0 }}>
+                Exam scheduling unlocks once the teacher portal is connected.
+              </p>
+            </PreviewCard>
+
+            <PreviewCard icon="auto_awesome" title="Recommended For You">
+              <p style={{ fontSize: "13px", color: "#B7BEC7", margin: "0 0 4px 0" }}>No recommendations yet</p>
+              <p style={{ fontSize: "12px", color: "#92ADCF", margin: 0 }}>
+                Personalized recommendations unlock once the AI learning agent is live.
+              </p>
+            </PreviewCard>
+          </div>
         </main>
       </div>
+
+      <PortalAssistantWidget />
     </div>
   );
 }

@@ -5,6 +5,44 @@ import { logout } from "../../api/auth";
 import { Sidebar, TopBar, KpiCard } from "../../components/ui";
 import "../../components/ui/ui.css";
 
+function PreviewCard({ icon, title, children }) {
+  return (
+    <div
+      className="edu-card"
+      style={{
+        padding: "20px",
+        border: "1px dashed #C9C9C3",
+        backgroundColor: "#FAFAF8",
+      }}
+    >
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "12px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <span className="material-symbols-outlined" style={{ fontSize: "20px", color: "#92ADCF" }}>
+            {icon}
+          </span>
+          <p style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase", color: "#5F6774", margin: 0 }}>
+            {title}
+          </p>
+        </div>
+        <span
+          style={{
+            fontSize: "9px",
+            fontWeight: 700,
+            letterSpacing: "0.05em",
+            color: "#92ADCF",
+            border: "1px solid #92ADCF",
+            borderRadius: "3px",
+            padding: "2px 6px",
+          }}
+        >
+          PREVIEW
+        </span>
+      </div>
+      {children}
+    </div>
+  );
+}
+
 function TeacherDashboard() {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
@@ -63,7 +101,6 @@ function TeacherDashboard() {
 
   return (
     <div className="edu-layout-container">
-      {/* Sidebar Navigation */}
       <Sidebar
         userRole="teacher"
         activeId="dashboard"
@@ -78,7 +115,6 @@ function TeacherDashboard() {
         }}
       />
 
-      {/* Main Content Shell */}
       <div className="edu-main-wrapper">
         <TopBar
           user={{ name: "Faculty Portal", role: "Educator" }}
@@ -86,7 +122,6 @@ function TeacherDashboard() {
         />
 
         <main className="edu-page-content">
-          {/* Header Bar */}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: "24px", flexWrap: "wrap", gap: "12px" }}>
             <div>
               <span style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.05em", color: "#5F6774", textTransform: "uppercase" }}>
@@ -96,9 +131,16 @@ function TeacherDashboard() {
                 Classroom Overview & Student Metrics
               </h2>
             </div>
+            <button
+              onClick={() => navigate("/teacher/grading")}
+              className="edu-btn-primary"
+              style={{ display: "flex", alignItems: "center", gap: "6px", padding: "8px 16px" }}
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: "16px" }}>grading</span>
+              GO TO GRADING
+            </button>
           </div>
 
-          {/* Welcome Banner */}
           <div
             className="edu-card"
             style={{
@@ -113,7 +155,6 @@ function TeacherDashboard() {
             </p>
           </div>
 
-          {/* KPI Stat Cards Grid */}
           <div className="edu-kpi-grid">
             <KpiCard
               title="Students Assigned"
@@ -133,14 +174,12 @@ function TeacherDashboard() {
               progressColor={data.pending_grading > 0 ? "#D9922E" : "#3C8C5D"}
             />
 
-            <KpiCard
-              title="Flagged Students"
-              value={data.flagged_students}
-              trend={data.flagged_students > 0 ? "Intervention Required" : "Zero Alerts"}
-              trendDirection={data.flagged_students > 0 ? "down" : "up"}
-              progressPercent={data.flagged_students > 0 ? 30 : 100}
-              progressColor={data.flagged_students > 0 ? "#B23A2E" : "#3C8C5D"}
-            />
+            <PreviewCard icon="flag" title="Flagged Students">
+              <p style={{ fontSize: "22px", fontWeight: 700, color: "#B7BEC7", margin: "0 0 4px 0" }}>--</p>
+              <p style={{ fontSize: "12px", color: "#92ADCF", margin: 0 }}>
+                At-risk detection unlocks once the ML weak-topic model is live.
+              </p>
+            </PreviewCard>
           </div>
         </main>
       </div>

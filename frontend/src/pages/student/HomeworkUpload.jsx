@@ -1,15 +1,91 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Sidebar, TopBar, DataTable, StatusBadge, FileDropzone } from "../../components/ui";
-import { pendingHomeworkList, homeworkSubmissionsHistory } from "../../data/studentMockData";
 import { logout } from "../../api/auth";
+import apiClient from "../../api/client";
+import PortalAssistantWidget from "../../components/PortalAssistantWidget";
+
+function mapSubmission(sub) {
+  return {
+    id: sub.id,
+    title: sub.title,
+    subject: sub.subject,
+    submittedDate: new Date(sub.created_at).toLocaleDateString("en-IN", {
+      day: "2-digit", month: "short", year: "numeric",
+    }),
+    score: sub.status === "graded" ? `${sub.score} / ${sub.max_score}` : "-- / --",
+    statusVariant: sub.status === "graded" ? "on-track" : "needs-attention",
+    statusLabel: sub.status.toUpperCase(),
+    feedback: sub.status === "graded" ? (sub.feedback || "Graded — no written feedback provided.") : "Awaiting teacher grading.",
+    fileName: sub.original_filename,
+  };
+}
+
+function computeDueStatus(dueDateStr) {
+  if (!dueDateStr) return { statusVariant: "on-track", statusLabel: "ASSIGNED" };
+
+  const due = new Date(dueDateStr);
+  const now = new Date();
+  const diffDays = Math.ceil((due - now) / (1000 * 60 * 60 * 24));
+
+  if (diffDays < 0) return { statusVariant: "flagged-at-risk", statusLabel: "OVERDUE" };
+  if (diffDays === 0) return { statusVariant: "needs-attention", statusLabel: "DUE TODAY" };
+  if (diffDays === 1) return { statusVariant: "needs-attention", statusLabel: "DUE TOMORROW" };
+  if (diffDays <= 3) return { statusVariant: "needs-attention", statusLabel: `DUE IN ${diffDays} DAYS` };
+  return { statusVariant: "on-track", statusLabel: "ASSIGNED" };
+}
+
+function mapAssignment(a) {
+  const { statusVariant, statusLabel } = computeDueStatus(a.due_date);
+  return {
+    id: a.id,
+    title: a.title,
+    subject: a.subject,
+    dueDate: a.due_date
+      ? new Date(a.due_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
+      : "No due date",
+    maxScore: a.max_score,
+    instructions: a.instructions || "No additional instructions provided.",
+    statusVariant,
+    statusLabel,
+  };
+}
 
 export default function HomeworkUpload() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const [selectedAssignment, setSelectedAssignment] = useState(pendingHomeworkList[0]);
+  const [pendingAssignments, setPendingAssignments] = useState([]);
+  const [selectedAssignment, setSelectedAssignment] = useState(null);
   const [uploadedFiles, setUploadedFiles] = useState([]);
-  const [submissionHistory, setSubmissionHistory] = useState(homeworkSubmissionsHistory);
+  const [submissionHistory, setSubmissionHistory] = useState([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const navigate = useNavigate();
+
+  const fetchSubmissions = async () => {
+    try {
+      const res = await apiClient.get("/student/homework");
+      setSubmissionHistory(res.data.map(mapSubmission));
+    } catch (err) {
+      console.error("Failed to load homework submissions:", err);
+    }
+  };
+
+  const fetchAssignments = async () => {
+    try {
+      const res = await apiClient.get("/student/assignments");
+      const mapped = res.data.map(mapAssignment);
+      setPendingAssignments(mapped);
+      if (mapped.length > 0) {
+        setSelectedAssignment(mapped[0]);
+      }
+    } catch (err) {
+      console.error("Failed to load assignments:", err);
+    }
+  };
+
+  useEffect(() => {
+    fetchSubmissions();
+    fetchAssignments();
+  }, []);
 
   const handleProfileSelect = (itemId) => {
     if (itemId === "logout") {
@@ -17,31 +93,41 @@ export default function HomeworkUpload() {
     }
   };
 
-  const handleDropFiles = (files) => {
-    setUploadedFiles((prev) => [...prev, ...files]);
+  const handleDropFiles = (fileList) => {
+    const filesArray = Array.from(fileList);
+    setUploadedFiles((prev) => [...prev, ...filesArray]);
   };
 
-  const handleSubmitAssignment = () => {
+  const handleSubmitAssignment = async () => {
+    if (!selectedAssignment) {
+      alert("Please select an assignment first.");
+      return;
+    }
     if (uploadedFiles.length === 0) {
       alert("Please select or drop a file before submitting.");
       return;
     }
 
-    const newSub = {
-      id: `SUB-${Math.floor(100 + Math.random() * 900)}`,
-      title: selectedAssignment.title,
-      subject: selectedAssignment.subject,
-      submittedDate: "Just Now",
-      score: `-- / ${selectedAssignment.maxScore}`,
-      statusVariant: "on-track",
-      statusLabel: "SUBMITTED",
-      feedback: "Awaiting teacher grading.",
-      fileName: uploadedFiles[0].name,
-    };
+    const formData = new FormData();
+    formData.append("subject", selectedAssignment.subject);
+    formData.append("title", selectedAssignment.title);
+    formData.append("description", "");
+    formData.append("file", uploadedFiles[0]);
 
-    setSubmissionHistory([newSub, ...submissionHistory]);
-    setUploadedFiles([]);
-    alert(`Successfully submitted "${selectedAssignment.title}"!`);
+    setIsSubmitting(true);
+    try {
+      await apiClient.post("/student/homework/upload", formData, {
+        headers: { "Content-Type": undefined },
+      });
+      await fetchSubmissions();
+      setUploadedFiles([]);
+      alert(`Successfully submitted "${selectedAssignment.title}"!`);
+    } catch (err) {
+      console.error("Upload failed:", err);
+      alert("Upload failed. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const columns = [
@@ -93,7 +179,6 @@ export default function HomeworkUpload() {
         />
 
         <main className="edu-page-content">
-          {/* Header Bar */}
           <div
             style={{
               display: "flex",
@@ -128,7 +213,6 @@ export default function HomeworkUpload() {
             </div>
           </div>
 
-          {/* Upload Section Card */}
           <div
             style={{
               display: "grid",
@@ -138,50 +222,52 @@ export default function HomeworkUpload() {
               alignItems: "start"
             }}
           >
-            {/* Left: Pending Homework Selector */}
             <div className="edu-card" style={{ padding: "20px" }}>
               <h4 className="edu-font-heading" style={{ fontSize: "16px", fontWeight: 600, color: "#1B2330", margin: "0 0 12px 0" }}>
                 Select Pending Assignment
               </h4>
-              <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-                {pendingHomeworkList.map((hw) => (
-                  <div
-                    key={hw.id}
-                    onClick={() => setSelectedAssignment(hw)}
-                    style={{
-                      padding: "12px 16px",
-                      borderRadius: "4px",
-                      border: `1px solid ${selectedAssignment.id === hw.id ? "#26415E" : "#E5E5E1"}`,
-                      backgroundColor: selectedAssignment.id === hw.id ? "rgba(38, 65, 94, 0.05)" : "#FFFFFF",
-                      cursor: "pointer",
-                      transition: "all 0.15s ease"
-                    }}
-                  >
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
-                      <span style={{ fontSize: "10px", fontWeight: 700, color: "#26415E", textTransform: "uppercase" }}>{hw.subject}</span>
-                      <StatusBadge variant={hw.statusVariant} label={hw.statusLabel} />
+              {pendingAssignments.length === 0 ? (
+                <p style={{ fontSize: "13px", color: "#5F6774" }}>No assignments published yet. Check back later.</p>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                  {pendingAssignments.map((hw) => (
+                    <div
+                      key={hw.id}
+                      onClick={() => setSelectedAssignment(hw)}
+                      style={{
+                        padding: "12px 16px",
+                        borderRadius: "4px",
+                        border: `1px solid ${selectedAssignment?.id === hw.id ? "#26415E" : "#E5E5E1"}`,
+                        backgroundColor: selectedAssignment?.id === hw.id ? "rgba(38, 65, 94, 0.05)" : "#FFFFFF",
+                        cursor: "pointer",
+                        transition: "all 0.15s ease"
+                      }}
+                    >
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
+                        <span style={{ fontSize: "10px", fontWeight: 700, color: "#26415E", textTransform: "uppercase" }}>{hw.subject}</span>
+                        <StatusBadge variant={hw.statusVariant} label={hw.statusLabel} />
+                      </div>
+                      <p style={{ fontSize: "14px", fontWeight: 600, color: "#1B2330", margin: "0 0 4px 0" }}>{hw.title}</p>
+                      <p style={{ fontSize: "12px", color: "#5F6774", margin: 0 }}>Due: {hw.dueDate} • Max: {hw.maxScore} pts</p>
                     </div>
-                    <p style={{ fontSize: "14px", fontWeight: 600, color: "#1B2330", margin: "0 0 4px 0" }}>{hw.title}</p>
-                    <p style={{ fontSize: "12px", color: "#5F6774", margin: 0 }}>Due: {hw.dueDate} • Max: {hw.maxScore} pts</p>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
 
-            {/* Right: File Dropzone & Submit */}
             <div className="edu-card" style={{ padding: "20px" }}>
               <h4 className="edu-font-heading" style={{ fontSize: "16px", fontWeight: 600, color: "#1B2330", margin: "0 0 12px 0" }}>
-                Upload Submission: {selectedAssignment.title}
+                Upload Submission{selectedAssignment ? `: ${selectedAssignment.title}` : ""}
               </h4>
               <p style={{ fontSize: "12px", color: "#5F6774", margin: "0 0 16px 0" }}>
-                {selectedAssignment.instructions}
+                {selectedAssignment ? selectedAssignment.instructions : "Select an assignment on the left to begin."}
               </p>
 
               <FileDropzone
-                onDropFiles={handleDropFiles}
-                accept=".pdf,.docx,.zip"
-                maxSizeMb={25}
-                helperText="Drag & drop your solution PDF or DOCX file here (Max 25MB)"
+                onFilesSelected={handleDropFiles}
+                accept=".pdf,.docx,.zip,.jpg,.jpeg,.png,.webp"
+                acceptText="Drag & drop your solution PDF, DOCX, or a photo of your handwritten work"
+                maxSizeText="Maximum file size 25MB"
               />
 
               {uploadedFiles.length > 0 && (
@@ -198,16 +284,16 @@ export default function HomeworkUpload() {
 
               <button
                 onClick={handleSubmitAssignment}
+                disabled={isSubmitting || !selectedAssignment}
                 className="edu-btn-primary"
-                style={{ width: "100%", marginTop: "16px", padding: "12px", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px" }}
+                style={{ width: "100%", marginTop: "16px", padding: "12px", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", opacity: (isSubmitting || !selectedAssignment) ? 0.6 : 1 }}
               >
-                SUBMIT HOMEWORK
+                {isSubmitting ? "SUBMITTING..." : "SUBMIT HOMEWORK"}
                 <span className="material-symbols-outlined" style={{ fontSize: "18px" }}>send</span>
               </button>
             </div>
           </div>
 
-          {/* Submission History Table */}
           <DataTable
             title="Homework Submission History"
             columns={columns}
@@ -216,6 +302,8 @@ export default function HomeworkUpload() {
           />
         </main>
       </div>
+
+      <PortalAssistantWidget />
     </div>
   );
 }

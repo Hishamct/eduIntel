@@ -1,16 +1,66 @@
-import { useState, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { Sidebar, TopBar, DataTable, StatusBadge, Modal } from "../../components/ui";
-import { studentRecordsData } from "../../data/adminMockData";
+import { Sidebar, TopBar, DataTable, Modal } from "../../components/ui";
 import { logout } from "../../api/auth";
+import apiClient from "../../api/client";
+
+const SECTIONS = ["Grade 10-A", "Grade 10-B", "Grade 11-A", "Grade 11-B", "Grade 12-A"];
+
+function initials(name, email) {
+  const source = name || email;
+  const parts = source.split(name ? " " : "@")[0].split(" ");
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return source.slice(0, 2).toUpperCase();
+}
+
+function mapStudent(s) {
+  return {
+    id: s.id,
+    name: s.name || "(No name set)",
+    avatarInitials: initials(s.name, s.email),
+    email: s.email,
+    gradeClass: s.section || "Unassigned",
+    rollNumber: s.roll_number || "--",
+    joinedDate: new Date(s.created_at).toLocaleDateString("en-IN", {
+      day: "2-digit", month: "short", year: "numeric",
+    }),
+    phone: s.phone || "Not provided",
+    address: s.address || "Not provided",
+    parentEmail: s.parent_email || "Not provided",
+    guardianName: s.guardian_name || "Not provided",
+    guardianPhone: s.guardian_phone || "Not provided",
+  };
+}
+
+const emptyForm = {
+  name: "", email: "", password: "", grade: "", section: "Grade 12-A",
+  roll_number: "", parent_email: "", phone: "", address: "",
+  guardian_name: "", guardian_phone: "",
+};
 
 export default function StudentRecords() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [selectedClass, setSelectedClass] = useState("All");
-  const [selectedStatus, setSelectedStatus] = useState("All");
+  const [students, setStudents] = useState([]);
   const [selectedStudent, setSelectedStudent] = useState(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+  const [isEnrollModalOpen, setIsEnrollModalOpen] = useState(false);
+  const [form, setForm] = useState(emptyForm);
+  const [isSaving, setIsSaving] = useState(false);
   const navigate = useNavigate();
+
+  const fetchStudents = async () => {
+    try {
+      const res = await apiClient.get("/admin/students");
+      setStudents(res.data.map(mapStudent));
+    } catch (err) {
+      console.error("Failed to load students:", err);
+    }
+  };
+
+  useEffect(() => {
+    fetchStudents();
+  }, []);
 
   const handleProfileSelect = (itemId) => {
     if (itemId === "logout") {
@@ -19,19 +69,51 @@ export default function StudentRecords() {
   };
 
   const filteredData = useMemo(() => {
-    return studentRecordsData.filter((student) => {
-      const matchClass = selectedClass === "All" || student.gradeClass === selectedClass;
-      const matchStatus =
-        selectedStatus === "All" ||
-        student.academicStatusVariant === selectedStatus ||
-        student.academicStatusLabel.toLowerCase().includes(selectedStatus.toLowerCase());
-      return matchClass && matchStatus;
-    });
-  }, [selectedClass, selectedStatus]);
+    if (selectedClass === "All") return students;
+    return students.filter((s) => s.gradeClass === selectedClass);
+  }, [students, selectedClass]);
 
   const handleViewProfile = (student) => {
     setSelectedStudent(student);
-    setIsModalOpen(true);
+    setIsProfileModalOpen(true);
+  };
+
+  const handleFormChange = (field) => (e) => {
+    setForm((prev) => ({ ...prev, [field]: e.target.value }));
+  };
+
+  const handleEnrollStudent = async () => {
+    if (!form.name || !form.email || !form.password) {
+      alert("Name, email, and password are required.");
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      await apiClient.post("/admin/students", {
+        email: form.email,
+        password: form.password,
+        name: form.name,
+        grade: form.grade || null,
+        section: form.section || null,
+        roll_number: form.roll_number || null,
+        parent_email: form.parent_email || null,
+        phone: form.phone || null,
+        address: form.address || null,
+        guardian_name: form.guardian_name || null,
+        guardian_phone: form.guardian_phone || null,
+      });
+      await fetchStudents();
+      setForm(emptyForm);
+      setIsEnrollModalOpen(false);
+      alert(`Student "${form.name}" enrolled successfully!`);
+    } catch (err) {
+      const detail = err.response?.data?.detail || "Failed to enroll student.";
+      alert(detail);
+      console.error("Failed to enroll student:", err);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const columns = [
@@ -43,41 +125,23 @@ export default function StudentRecords() {
         <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
           <div
             style={{
-              width: "32px",
-              height: "32px",
-              borderRadius: "50%",
-              backgroundColor: "rgba(38, 65, 94, 0.1)",
-              color: "#26415E",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontWeight: 700,
-              fontSize: "12px",
-              fontFamily: "var(--font-heading)"
+              width: "32px", height: "32px", borderRadius: "50%",
+              backgroundColor: "rgba(38, 65, 94, 0.1)", color: "#26415E",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontWeight: 700, fontSize: "12px", fontFamily: "var(--font-heading)"
             }}
           >
             {row.avatarInitials}
           </div>
           <div>
             <span style={{ fontWeight: 600, color: "#1B2330" }}>{row.name}</span>
+            <span style={{ display: "block", fontSize: "10px", color: "#5F6774" }}>{row.email}</span>
           </div>
         </div>
       )
     },
-    { key: "id", label: "Student ID", sortable: true },
-    { key: "gradeClass", label: "Grade / Class", sortable: true },
-    { key: "enrollmentStatus", label: "Enrollment", sortable: true },
-    {
-      key: "academicStatus",
-      label: "Academic Status",
-      sortable: true,
-      render: (row) => (
-        <StatusBadge
-          variant={row.academicStatusVariant}
-          label={row.academicStatusLabel}
-        />
-      )
-    },
+    { key: "gradeClass", label: "Class Section", sortable: true },
+    { key: "rollNumber", label: "Roll Number", sortable: true },
     { key: "joinedDate", label: "Joined Date", sortable: true },
     {
       key: "actions",
@@ -97,6 +161,12 @@ export default function StudentRecords() {
     }
   ];
 
+  const formFieldStyle = {
+    padding: "10px", borderRadius: "4px", border: "1px solid #E5E5E1",
+    backgroundColor: "#F4F4F1", fontSize: "13px", outline: "none", color: "#1B2330", width: "100%",
+  };
+  const labelStyle = { fontSize: "11px", fontWeight: 700, color: "#5F6774", textTransform: "uppercase" };
+
   return (
     <div className="edu-layout-container">
       <Sidebar
@@ -113,139 +183,56 @@ export default function StudentRecords() {
 
       <div className="edu-main-wrapper">
         <TopBar
-          user={{ name: "Dr. Aria Vance", role: "Super Admin" }}
+          user={{ name: "Administrator Portal", role: "Admin" }}
           onProfileMenuSelect={handleProfileSelect}
         />
 
         <main className="edu-page-content">
-          {/* Header Bar */}
           <div
             style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "flex-end",
-              marginBottom: "24px",
-              flexWrap: "wrap",
-              gap: "12px"
+              display: "flex", justifyContent: "space-between", alignItems: "flex-end",
+              marginBottom: "24px", flexWrap: "wrap", gap: "12px"
             }}
           >
             <div>
-              <span
-                style={{
-                  fontSize: "11px",
-                  fontWeight: 700,
-                  letterSpacing: "0.05em",
-                  color: "#5F6774",
-                  textTransform: "uppercase"
-                }}
-              >
+              <span style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.05em", color: "#5F6774", textTransform: "uppercase" }}>
                 ADMINISTRATOR PORTAL
               </span>
-              <h2
-                className="edu-font-heading"
-                style={{ fontSize: "24px", fontWeight: 600, color: "#1B2330", margin: "4px 0 0 0" }}
-              >
+              <h2 className="edu-font-heading" style={{ fontSize: "24px", fontWeight: 600, color: "#1B2330", margin: "4px 0 0 0" }}>
                 Student Records
               </h2>
             </div>
           </div>
 
-          {/* Filter Controls Strip */}
           <div
             className="edu-card"
             style={{
-              padding: "16px 20px",
-              marginBottom: "24px",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              flexWrap: "wrap",
-              gap: "16px"
+              padding: "16px 20px", marginBottom: "24px", display: "flex",
+              alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "16px"
             }}
           >
-            <div style={{ display: "flex", alignItems: "center", gap: "16px", flexWrap: "wrap" }}>
-              <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                <label
-                  style={{
-                    fontSize: "11px",
-                    fontWeight: 700,
-                    letterSpacing: "0.05em",
-                    textTransform: "uppercase",
-                    color: "#5F6774"
-                  }}
-                >
-                  Class Filter
-                </label>
-                <select
-                  value={selectedClass}
-                  onChange={(e) => setSelectedClass(e.target.value)}
-                  style={{
-                    padding: "6px 12px",
-                    borderRadius: "4px",
-                    border: "1px solid #E5E5E1",
-                    backgroundColor: "#F4F4F1",
-                    fontSize: "13px",
-                    color: "#1B2330",
-                    outline: "none"
-                  }}
-                >
-                  <option value="All">All Classes</option>
-                  <option value="Grade 10-A">Grade 10-A</option>
-                  <option value="Grade 10-B">Grade 10-B</option>
-                  <option value="Grade 11-A">Grade 11-A</option>
-                  <option value="Grade 11-B">Grade 11-B</option>
-                  <option value="Grade 11-C">Grade 11-C</option>
-                  <option value="Grade 12-A">Grade 12-A</option>
-                  <option value="Grade 12-B">Grade 12-B</option>
-                </select>
-              </div>
-
-              <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                <label
-                  style={{
-                    fontSize: "11px",
-                    fontWeight: 700,
-                    letterSpacing: "0.05em",
-                    textTransform: "uppercase",
-                    color: "#5F6774"
-                  }}
-                >
-                  Academic Status
-                </label>
-                <select
-                  value={selectedStatus}
-                  onChange={(e) => setSelectedStatus(e.target.value)}
-                  style={{
-                    padding: "6px 12px",
-                    borderRadius: "4px",
-                    border: "1px solid #E5E5E1",
-                    backgroundColor: "#F4F4F1",
-                    fontSize: "13px",
-                    color: "#1B2330",
-                    outline: "none"
-                  }}
-                >
-                  <option value="All">All Statuses</option>
-                  <option value="on-track">On-Track</option>
-                  <option value="needs-attention">Needs-Attention</option>
-                  <option value="flagged-at-risk">Flagged</option>
-                </select>
-              </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+              <label style={labelStyle}>Class Filter</label>
+              <select
+                value={selectedClass}
+                onChange={(e) => setSelectedClass(e.target.value)}
+                style={{ padding: "6px 12px", borderRadius: "4px", border: "1px solid #E5E5E1", backgroundColor: "#F4F4F1", fontSize: "13px", color: "#1B2330", outline: "none" }}
+              >
+                <option value="All">All Classes</option>
+                {SECTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
             </div>
 
-            <div style={{ display: "flex", gap: "12px" }}>
-              <button className="edu-btn-primary" style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                <span className="material-symbols-outlined" style={{ fontSize: "16px" }}>add</span>
-                New Student
-              </button>
-              <button className="edu-btn-secondary" style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                <span className="material-symbols-outlined" style={{ fontSize: "16px" }}>download</span>
-                Export Data
-              </button>
-            </div>
+            <button
+              onClick={() => setIsEnrollModalOpen(true)}
+              className="edu-btn-primary"
+              style={{ display: "flex", alignItems: "center", gap: "6px" }}
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: "16px" }}>add</span>
+              New Student
+            </button>
           </div>
 
-          {/* Master Student Data Table */}
           <DataTable
             title="Student Directory Master List"
             columns={columns}
@@ -255,60 +242,32 @@ export default function StudentRecords() {
         </main>
       </div>
 
-      {/* Student Profile Detail Modal */}
       {selectedStudent && (
         <Modal
-          isOpen={isModalOpen}
-          onClose={() => setIsModalOpen(false)}
+          isOpen={isProfileModalOpen}
+          onClose={() => setIsProfileModalOpen(false)}
           title={`Student Profile: ${selectedStudent.name}`}
           icon="person"
           iconVariant="info"
           primaryLabel="CLOSE PROFILE"
-          onPrimary={() => setIsModalOpen(false)}
-          secondaryLabel="PRINT RECORD"
-          onSecondary={() => window.print()}
-          footerNote={`INSTITUTIONAL RECORD ID: ${selectedStudent.id}`}
+          onPrimary={() => setIsProfileModalOpen(false)}
           description={
             <div style={{ display: "flex", flexDirection: "column", gap: "16px", textAlign: "left" }}>
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "16px",
-                  paddingBottom: "16px",
-                  borderBottom: "1px solid #E5E5E1"
-                }}
-              >
+              <div style={{ display: "flex", alignItems: "center", gap: "16px", paddingBottom: "16px", borderBottom: "1px solid #E5E5E1" }}>
                 <div
                   style={{
-                    width: "52px",
-                    height: "52px",
-                    borderRadius: "50%",
-                    backgroundColor: "#26415E",
-                    color: "#FFFFFF",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontSize: "20px",
-                    fontWeight: 700,
-                    fontFamily: "var(--font-heading)"
+                    width: "52px", height: "52px", borderRadius: "50%", backgroundColor: "#26415E",
+                    color: "#FFFFFF", display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: "20px", fontWeight: 700, fontFamily: "var(--font-heading)"
                   }}
                 >
                   {selectedStudent.avatarInitials}
                 </div>
                 <div>
-                  <h4 style={{ margin: 0, color: "#1B2330", fontSize: "18px" }}>
-                    {selectedStudent.name}
-                  </h4>
+                  <h4 style={{ margin: 0, color: "#1B2330", fontSize: "18px" }}>{selectedStudent.name}</h4>
                   <p style={{ margin: "2px 0 0 0", color: "#5F6774", fontSize: "12px", fontFamily: "var(--font-mono)" }}>
-                    {selectedStudent.id} • {selectedStudent.gradeClass}
+                    {selectedStudent.gradeClass} • Roll {selectedStudent.rollNumber}
                   </p>
-                </div>
-                <div style={{ marginLeft: "auto" }}>
-                  <StatusBadge
-                    variant={selectedStudent.academicStatusVariant}
-                    label={selectedStudent.academicStatusLabel}
-                  />
                 </div>
               </div>
 
@@ -327,25 +286,98 @@ export default function StudentRecords() {
                     Guardian Details
                   </p>
                   <p style={{ fontSize: "12px", fontWeight: 600, color: "#1B2330", margin: "6px 0 2px 0" }}>{selectedStudent.guardianName}</p>
-                  <p style={{ fontSize: "12px", color: "#5F6774", margin: "2px 0" }}>Relationship: {selectedStudent.guardianRelationship}</p>
-                  <p style={{ fontSize: "12px", color: "#1B2330", margin: "2px 0 0 0" }}>📞 {selectedStudent.guardianPhone}</p>
+                  <p style={{ fontSize: "12px", color: "#1B2330", margin: "2px 0" }}>📞 {selectedStudent.guardianPhone}</p>
+                  <p style={{ fontSize: "12px", color: "#5F6774", margin: "2px 0 0 0" }}>✉️ {selectedStudent.parentEmail}</p>
                 </div>
               </div>
 
-              <div className="edu-card" style={{ padding: "12px" }}>
-                <p style={{ fontSize: "11px", fontWeight: 700, color: "#5F6774", margin: "0 0 8px 0", textTransform: "uppercase" }}>
-                  Performance Pulse
+              <div className="edu-card" style={{ padding: "12px", border: "1px dashed #C9C9C3", backgroundColor: "#FAFAF8" }}>
+                <p style={{ fontSize: "11px", fontWeight: 700, color: "#92ADCF", margin: 0, textTransform: "uppercase" }}>
+                  Performance Pulse — Preview
                 </p>
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px", color: "#1B2330" }}>
-                  <span>Attendance: <strong>{selectedStudent.attendanceRate}</strong></span>
-                  <span>Semester GPA: <strong>{selectedStudent.semesterGpa} / {selectedStudent.targetGpa}</strong></span>
-                  <span>Active Days: <strong>{selectedStudent.daysActive} days</strong></span>
-                </div>
+                <p style={{ fontSize: "12px", color: "#92ADCF", margin: "6px 0 0 0" }}>
+                  Attendance and GPA tracking unlock once the admin attendance module and ML analytics are live.
+                </p>
               </div>
             </div>
           }
         />
       )}
+
+      <Modal
+        isOpen={isEnrollModalOpen}
+        onClose={() => setIsEnrollModalOpen(false)}
+        title="Enroll New Student"
+        icon="person_add"
+        iconVariant="info"
+        primaryLabel={isSaving ? "SAVING..." : "ENROLL STUDENT"}
+        onPrimary={handleEnrollStudent}
+        secondaryLabel="CANCEL"
+        onSecondary={() => setIsEnrollModalOpen(false)}
+        description={
+          <div style={{ display: "flex", flexDirection: "column", gap: "12px", textAlign: "left" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+              <div>
+                <label style={labelStyle}>Full Name *</label>
+                <input style={formFieldStyle} value={form.name} onChange={handleFormChange("name")} placeholder="Priya Krishnan" />
+              </div>
+              <div>
+                <label style={labelStyle}>Email *</label>
+                <input style={formFieldStyle} value={form.email} onChange={handleFormChange("email")} placeholder="priya@example.com" />
+              </div>
+            </div>
+
+            <div>
+              <label style={labelStyle}>Temporary Password *</label>
+              <input style={formFieldStyle} type="password" value={form.password} onChange={handleFormChange("password")} placeholder="Set a temporary password" />
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px" }}>
+              <div>
+                <label style={labelStyle}>Grade</label>
+                <input style={formFieldStyle} value={form.grade} onChange={handleFormChange("grade")} placeholder="12" />
+              </div>
+              <div>
+                <label style={labelStyle}>Section</label>
+                <select style={formFieldStyle} value={form.section} onChange={handleFormChange("section")}>
+                  {SECTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={labelStyle}>Roll Number</label>
+                <input style={formFieldStyle} value={form.roll_number} onChange={handleFormChange("roll_number")} placeholder="12A-07" />
+              </div>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+              <div>
+                <label style={labelStyle}>Phone</label>
+                <input style={formFieldStyle} value={form.phone} onChange={handleFormChange("phone")} placeholder="+91 98765 43210" />
+              </div>
+              <div>
+                <label style={labelStyle}>Address</label>
+                <input style={formFieldStyle} value={form.address} onChange={handleFormChange("address")} placeholder="Kaloor, Kochi" />
+              </div>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+              <div>
+                <label style={labelStyle}>Guardian Name</label>
+                <input style={formFieldStyle} value={form.guardian_name} onChange={handleFormChange("guardian_name")} placeholder="Ramesh Krishnan" />
+              </div>
+              <div>
+                <label style={labelStyle}>Guardian Phone</label>
+                <input style={formFieldStyle} value={form.guardian_phone} onChange={handleFormChange("guardian_phone")} placeholder="+91 98765 43211" />
+              </div>
+            </div>
+
+            <div>
+              <label style={labelStyle}>Parent Email</label>
+              <input style={formFieldStyle} value={form.parent_email} onChange={handleFormChange("parent_email")} placeholder="parent@example.com" />
+            </div>
+          </div>
+        }
+      />
     </div>
   );
 }

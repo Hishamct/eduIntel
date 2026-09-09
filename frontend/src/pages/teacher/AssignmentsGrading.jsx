@@ -1,20 +1,77 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Sidebar, TopBar, DataTable, StatusBadge, GradingInput } from "../../components/ui";
-import { activeAssignmentsList, assignmentSubmissionsQueue } from "../../data/teacherMockData";
 import { logout } from "../../api/auth";
+import apiClient from "../../api/client";
+
+function initialsFromEmail(email) {
+  const namePart = email.split("@")[0];
+  return namePart.slice(0, 2).toUpperCase();
+}
+
+function mapSubmission(sub) {
+  return {
+    id: sub.id,
+    studentName: sub.student_email,
+    studentId: sub.student_id,
+    avatarInitials: initialsFromEmail(sub.student_email),
+    assignmentTitle: sub.title,
+    subject: sub.subject,
+    submissionNote: sub.description || "No additional notes",
+    submittedDate: new Date(sub.created_at).toLocaleDateString("en-IN", {
+      day: "2-digit", month: "short", year: "numeric",
+    }),
+    maxScore: sub.max_score ?? 100,
+    rawScore: sub.score ?? "",
+    feedback: sub.feedback || "",
+    attachmentName: sub.original_filename,
+    statusVariant: sub.status === "graded" ? "on-track" : "needs-attention",
+    statusLabel: sub.status.toUpperCase(),
+    extractedText: sub.extracted_text || null,
+    ocrConfidence: sub.ocr_confidence ?? null,
+  };
+}
 
 export default function AssignmentsGrading() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const [submissions, setSubmissions] = useState(assignmentSubmissionsQueue);
-  const [selectedSubmission, setSelectedSubmission] = useState(assignmentSubmissionsQueue[0]);
+  const [submissions, setSubmissions] = useState([]);
+  const [selectedSubmission, setSelectedSubmission] = useState(null);
   const [newTitle, setNewTitle] = useState("");
+  const [newSubject, setNewSubject] = useState("MATHEMATICS");
   const [newSection, setNewSection] = useState("Grade 12-A");
   const [newDueDate, setNewDueDate] = useState("");
   const [newMaxScore, setNewMaxScore] = useState(100);
   const [newInstructions, setNewInstructions] = useState("");
+  const [publishedAssignments, setPublishedAssignments] = useState([]);
 
   const navigate = useNavigate();
+
+  const fetchSubmissions = async () => {
+    try {
+      const res = await apiClient.get("/teacher/homework");
+      const mapped = res.data.map(mapSubmission);
+      setSubmissions(mapped);
+      if (mapped.length > 0 && !selectedSubmission) {
+        setSelectedSubmission(mapped[0]);
+      }
+    } catch (err) {
+      console.error("Failed to load submissions:", err);
+    }
+  };
+
+  const fetchAssignments = async () => {
+    try {
+      const res = await apiClient.get("/teacher/assignments");
+      setPublishedAssignments(res.data);
+    } catch (err) {
+      console.error("Failed to load assignments:", err);
+    }
+  };
+
+  useEffect(() => {
+    fetchSubmissions();
+    fetchAssignments();
+  }, []);
 
   const handleProfileSelect = (itemId) => {
     if (itemId === "logout") {
@@ -22,40 +79,69 @@ export default function AssignmentsGrading() {
     }
   };
 
-  const handlePublishAssignment = (e) => {
+  const handlePublishAssignment = async (e) => {
     e.preventDefault();
     if (!newTitle) {
       alert("Please enter an assignment title.");
       return;
     }
-    alert(`Assignment "${newTitle}" published for ${newSection}!`);
-    setNewTitle("");
-    setNewInstructions("");
+
+    try {
+      await apiClient.post("/teacher/assignments", {
+        title: newTitle,
+        subject: newSubject,
+        class_section: newSection,
+        due_date: newDueDate || null,
+        max_score: Number(newMaxScore),
+        instructions: newInstructions || null,
+      });
+      await fetchAssignments();
+      alert(`Assignment "${newTitle}" published for ${newSection}!`);
+      setNewTitle("");
+      setNewInstructions("");
+    } catch (err) {
+      console.error("Failed to publish assignment:", err);
+      alert("Failed to publish assignment. Please try again.");
+    }
   };
 
-  const handleSaveGrade = ({ score, feedback }) => {
+  const handleSaveGrade = async ({ score, feedback }) => {
     if (!selectedSubmission) return;
 
-    setSubmissions((prev) =>
-      prev.map((item) =>
-        item.id === selectedSubmission.id
-          ? {
-              ...item,
-              rawScore: score,
-              feedback,
-              statusVariant: "on-track",
-              statusLabel: "GRADED"
-            }
-          : item
-      )
-    );
-    alert(`Grade saved for ${selectedSubmission.studentName}!`);
+    try {
+      await apiClient.patch(`/teacher/homework/${selectedSubmission.id}/grade`, {
+        score: Number(score),
+        max_score: selectedSubmission.maxScore,
+        feedback,
+      });
+      await fetchSubmissions();
+      alert(`Grade saved for ${selectedSubmission.studentName}!`);
+    } catch (err) {
+      console.error("Failed to save grade:", err);
+      alert("Failed to save grade. Please try again.");
+    }
+  };
+
+  const handleViewOriginalFile = async (submission) => {
+    try {
+      const res = await apiClient.get(
+        `/teacher/homework/${submission.id}/file`,
+        { responseType: "blob" }
+      );
+      const contentType = res.headers["content-type"] || "application/octet-stream";
+      const blobUrl = window.URL.createObjectURL(new Blob([res.data], { type: contentType }));
+      window.open(blobUrl, "_blank");
+      setTimeout(() => window.URL.revokeObjectURL(blobUrl), 10000);
+    } catch (err) {
+      console.error("Failed to load original file:", err);
+      alert("Could not load the original file.");
+    }
   };
 
   const columns = [
     {
       key: "studentName",
-      label: "Student Name",
+      label: "Student Email",
       sortable: true,
       render: (row) => (
         <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
@@ -77,7 +163,7 @@ export default function AssignmentsGrading() {
           </div>
           <div>
             <span style={{ fontWeight: 600, color: "#1B2330", display: "block" }}>{row.studentName}</span>
-            <span style={{ fontSize: "10px", color: "#5F6774" }}>{row.studentId}</span>
+            <span style={{ fontSize: "10px", color: "#5F6774" }}>{row.assignmentTitle} • {row.subject}</span>
           </div>
         </div>
       )
@@ -98,7 +184,7 @@ export default function AssignmentsGrading() {
       key: "rawScore",
       label: "Raw Score",
       sortable: true,
-      render: (row) => <strong>{row.rawScore} / {row.maxScore}</strong>
+      render: (row) => <strong>{row.rawScore === "" ? "--" : row.rawScore} / {row.maxScore}</strong>
     },
     {
       key: "actions",
@@ -139,7 +225,6 @@ export default function AssignmentsGrading() {
         />
 
         <main className="edu-page-content">
-          {/* Header Bar */}
           <div
             style={{
               display: "flex",
@@ -174,7 +259,6 @@ export default function AssignmentsGrading() {
             </div>
           </div>
 
-          {/* 2-Column Section */}
           <div
             style={{
               display: "grid",
@@ -183,7 +267,6 @@ export default function AssignmentsGrading() {
               alignItems: "start"
             }}
           >
-            {/* Left Column: Create Assignment Form */}
             <div className="edu-card" style={{ padding: "24px" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "16px", paddingBottom: "12px", borderBottom: "1px solid #E5E5E1" }}>
                 <span className="material-symbols-outlined" style={{ color: "#26415E" }}>edit_note</span>
@@ -200,8 +283,22 @@ export default function AssignmentsGrading() {
                     value={newTitle}
                     onChange={(e) => setNewTitle(e.target.value)}
                     placeholder="e.g. Mid-Term Analytical Essay"
-                    style={{ padding: "10px", borderRadius: "4px", border: "1px solid #E5E5E1", backgroundColor: "#F4F4F1", fontSize: "14px", outline: "none" }}
+                    style={{ padding: "10px", borderRadius: "4px", border: "1px solid #E5E5E1", backgroundColor: "#F4F4F1", fontSize: "14px", outline: "none", color: "#1B2330" }}
                   />
+                </div>
+
+                <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                  <label style={{ fontSize: "11px", fontWeight: 700, color: "#5F6774", textTransform: "uppercase" }}>Subject</label>
+                  <select
+                    value={newSubject}
+                    onChange={(e) => setNewSubject(e.target.value)}
+                    style={{ padding: "10px", borderRadius: "4px", border: "1px solid #E5E5E1", backgroundColor: "#F4F4F1", fontSize: "13px", outline: "none", color: "#1B2330" }}
+                  >
+                    <option value="MATHEMATICS">MATHEMATICS</option>
+                    <option value="PHYSICS">PHYSICS</option>
+                    <option value="CHEMISTRY">CHEMISTRY</option>
+                    <option value="COMPUTER SCIENCE">COMPUTER SCIENCE</option>
+                  </select>
                 </div>
 
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
@@ -210,7 +307,7 @@ export default function AssignmentsGrading() {
                     <select
                       value={newSection}
                       onChange={(e) => setNewSection(e.target.value)}
-                      style={{ padding: "10px", borderRadius: "4px", border: "1px solid #E5E5E1", backgroundColor: "#F4F4F1", fontSize: "13px", outline: "none" }}
+                      style={{ padding: "10px", borderRadius: "4px", border: "1px solid #E5E5E1", backgroundColor: "#F4F4F1", fontSize: "13px", outline: "none", color: "#1B2330" }}
                     >
                       <option value="Grade 10-A">Grade 10-A</option>
                       <option value="Grade 10-B">Grade 10-B</option>
@@ -225,7 +322,7 @@ export default function AssignmentsGrading() {
                       type="date"
                       value={newDueDate}
                       onChange={(e) => setNewDueDate(e.target.value)}
-                      style={{ padding: "10px", borderRadius: "4px", border: "1px solid #E5E5E1", backgroundColor: "#F4F4F1", fontSize: "13px", outline: "none" }}
+                      style={{ padding: "10px", borderRadius: "4px", border: "1px solid #E5E5E1", backgroundColor: "#F4F4F1", fontSize: "13px", outline: "none", color: "#1B2330" }}
                     />
                   </div>
                 </div>
@@ -236,7 +333,7 @@ export default function AssignmentsGrading() {
                     type="number"
                     value={newMaxScore}
                     onChange={(e) => setNewMaxScore(e.target.value)}
-                    style={{ padding: "10px", borderRadius: "4px", border: "1px solid #E5E5E1", backgroundColor: "#F4F4F1", fontSize: "14px", outline: "none" }}
+                    style={{ padding: "10px", borderRadius: "4px", border: "1px solid #E5E5E1", backgroundColor: "#F4F4F1", fontSize: "14px", outline: "none", color: "#1B2330" }}
                   />
                 </div>
 
@@ -247,18 +344,33 @@ export default function AssignmentsGrading() {
                     value={newInstructions}
                     onChange={(e) => setNewInstructions(e.target.value)}
                     placeholder="Define submission guidelines and objectives..."
-                    style={{ padding: "10px", borderRadius: "4px", border: "1px solid #E5E5E1", backgroundColor: "#F4F4F1", fontSize: "14px", outline: "none", resize: "vertical" }}
+                    style={{ padding: "10px", borderRadius: "4px", border: "1px solid #E5E5E1", backgroundColor: "#F4F4F1", fontSize: "14px", outline: "none", resize: "vertical", color: "#1B2330" }}
                   />
                 </div>
 
-                <button className="edu-btn-primary" type="submit" style={{ width: "100%", padding: "12px", display: "flex", alignItems: "center", justifyCenter: "center", gap: "6px" }}>
+                <button className="edu-btn-primary" type="submit" style={{ width: "100%", padding: "12px", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px" }}>
                   PUBLISH ASSIGNMENT
                   <span className="material-symbols-outlined" style={{ fontSize: "18px" }}>send</span>
                 </button>
               </form>
+
+              {publishedAssignments.length > 0 && (
+                <div style={{ marginTop: "20px", paddingTop: "16px", borderTop: "1px solid #E5E5E1" }}>
+                  <p style={{ fontSize: "11px", fontWeight: 700, color: "#5F6774", textTransform: "uppercase", margin: "0 0 10px 0" }}>
+                    Published Assignments
+                  </p>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "8px", maxHeight: "180px", overflowY: "auto" }}>
+                    {publishedAssignments.map((a) => (
+                      <div key={a.id} style={{ fontSize: "12px", color: "#1B2330", padding: "8px 10px", backgroundColor: "#F4F4F1", borderRadius: "4px" }}>
+                        <strong>{a.title}</strong> — {a.subject} • {a.class_section}
+                        {a.due_date && <span style={{ color: "#5F6774" }}> • Due {a.due_date}</span>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
-            {/* Right Column: Submissions Table & Grading Input */}
             <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
               <DataTable
                 title="Active Submissions Queue"
@@ -267,20 +379,61 @@ export default function AssignmentsGrading() {
                 pageSize={5}
               />
 
-              {/* Grading Input Component */}
               {selectedSubmission && (
-                <GradingInput
-                  studentName={selectedSubmission.studentName}
-                  studentInitials={selectedSubmission.avatarInitials}
-                  assignmentTitle={selectedSubmission.assignmentTitle}
-                  submissionNote={selectedSubmission.submissionNote}
-                  maxScore={selectedSubmission.maxScore}
-                  initialScore={selectedSubmission.rawScore}
-                  initialFeedback={selectedSubmission.feedback}
-                  attachmentName={selectedSubmission.attachmentName}
-                  onSave={handleSaveGrade}
-                  onDiscard={() => setSelectedSubmission(null)}
-                />
+                <>
+                  {selectedSubmission.extractedText && (
+                    <div className="edu-card" style={{ padding: "20px" }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                          <span className="material-symbols-outlined" style={{ color: "#26415E", fontSize: "18px" }}>
+                            document_scanner
+                          </span>
+                          <h4 style={{ margin: 0, fontSize: "13px", fontWeight: 700, color: "#1B2330", textTransform: "uppercase" }}>
+                            Extracted Text (OCR)
+                          </h4>
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                          {selectedSubmission.ocrConfidence !== null && (
+                            <span style={{ fontSize: "11px", color: "#5F6774" }}>
+                              Confidence: {Math.round(selectedSubmission.ocrConfidence * 100)}%
+                            </span>
+                          )}
+                          <button
+                            onClick={() => handleViewOriginalFile(selectedSubmission)}
+                            className="edu-btn-secondary"
+                            style={{ padding: "3px 8px", fontSize: "11px" }}
+                          >
+                            View Original
+                          </button>
+                        </div>
+                      </div>
+                      <p style={{
+                        fontSize: "13px",
+                        color: "#1B2330",
+                        whiteSpace: "pre-wrap",
+                        maxHeight: "160px",
+                        overflowY: "auto",
+                        margin: 0,
+                        lineHeight: 1.5
+                      }}>
+                        {selectedSubmission.extractedText}
+                      </p>
+                    </div>
+                  )}
+
+                  <GradingInput
+                    studentName={selectedSubmission.studentName}
+                    studentInitials={selectedSubmission.avatarInitials}
+                    assignmentTitle={selectedSubmission.assignmentTitle}
+                    submissionNote={selectedSubmission.submissionNote}
+                    maxScore={selectedSubmission.maxScore}
+                    initialScore={selectedSubmission.rawScore}
+                    initialFeedback={selectedSubmission.feedback}
+                    attachmentName={selectedSubmission.attachmentName}
+                    onSave={handleSaveGrade}
+                    onDiscard={() => setSelectedSubmission(null)}
+                  />
+                </>
               )}
             </div>
           </div>
