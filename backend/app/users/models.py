@@ -9,6 +9,7 @@ class User(Base, TimestampMixin):
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     email: Mapped[str] = mapped_column(String, unique=True, index=True, nullable=False)
+    name: Mapped[str] = mapped_column(String, nullable=True)
     hashed_password: Mapped[str] = mapped_column(String, nullable=False)
     role: Mapped[str] = mapped_column(Enum("student", "teacher", "admin", name="user_role"), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -27,7 +28,10 @@ class StudentProfile(Base, TimestampMixin):
     section: Mapped[str] = mapped_column(String, nullable=True)
     roll_number: Mapped[str] = mapped_column(String, nullable=True)
     parent_email: Mapped[str] = mapped_column(String, nullable=True)
-
+    phone: Mapped[str] = mapped_column(String, nullable=True)
+    address: Mapped[str] = mapped_column(String, nullable=True)
+    guardian_name: Mapped[str] = mapped_column(String, nullable=True)
+    guardian_phone: Mapped[str] = mapped_column(String, nullable=True)
     user: Mapped["User"] = relationship(back_populates="student_profile")
 
 
