@@ -12,7 +12,11 @@ sys.path.append(os.getcwd())
 from app.core.database import Base
 from app.users import models as users_models  # noqa: F401 -- import so tables register on Base.metadata
 from app.auth import models as auth_models    # noqa: F401
+from app.student import models as student_models
+from app.teacher import models as teacher_models  # noqa: F401
+from app.admin import models as admin_models  # noqa: F401
 
+from app.announcements.models import Announcement 
 target_metadata = Base.metadata
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
