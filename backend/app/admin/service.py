@@ -184,6 +184,63 @@ async def list_students(db: AsyncSession):
         for user, profile in rows
     ]
 
+async def update_student_profile(
+    db: AsyncSession,
+    student_id: uuid.UUID,
+    grade: str | None = None,
+    section: str | None = None,
+    roll_number: str | None = None,
+    parent_email: str | None = None,
+    phone: str | None = None,
+    address: str | None = None,
+    guardian_name: str | None = None,
+    guardian_phone: str | None = None,
+) -> dict:
+    result = await db.execute(
+        select(User, StudentProfile)
+        .join(StudentProfile, StudentProfile.user_id == User.id)
+        .where(User.id == student_id)
+    )
+    row = result.first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Student not found")
+    user, profile = row
+
+    # Only overwrite fields that were actually provided — None means "leave unchanged"
+    if grade is not None:
+        profile.grade = grade
+    if section is not None:
+        profile.section = section
+    if roll_number is not None:
+        profile.roll_number = roll_number
+    if parent_email is not None:
+        profile.parent_email = parent_email
+    if phone is not None:
+        profile.phone = phone
+    if address is not None:
+        profile.address = address
+    if guardian_name is not None:
+        profile.guardian_name = guardian_name
+    if guardian_phone is not None:
+        profile.guardian_phone = guardian_phone
+
+    await db.commit()
+    await db.refresh(profile)
+
+    return {
+        "id": user.id,
+        "email": user.email,
+        "name": user.name,
+        "grade": profile.grade,
+        "section": profile.section,
+        "roll_number": profile.roll_number,
+        "parent_email": profile.parent_email,
+        "phone": profile.phone,
+        "address": profile.address,
+        "guardian_name": profile.guardian_name,
+        "guardian_phone": profile.guardian_phone,
+        "created_at": user.created_at,
+    }
 
 from app.admin.models import FeeRecord, Attendance
 
@@ -339,3 +396,4 @@ async def get_teacher_grading_performance(db: AsyncSession) -> dict:
         del entry["_turnaround_sum_hours"]
 
     return {"teachers": by_teacher, "total_graded_submissions": len(graded_submissions)}
+

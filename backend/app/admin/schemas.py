@@ -61,6 +61,16 @@ class StudentEnrollCreate(BaseModel):
     guardian_name: str | None = None
     guardian_phone: str | None = None
 
+class StudentUpdate(BaseModel):
+    grade: str | None = None
+    section: str | None = None
+    roll_number: str | None = None
+    parent_email: str | None = None
+    phone: str | None = None
+    address: str | None = None
+    guardian_name: str | None = None
+    guardian_phone: str | None = None
+
 
 class StudentRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)

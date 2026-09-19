@@ -11,7 +11,10 @@ from app.admin.schemas import (
     SalaryRecordCreate,
     SalaryRecordRead,
     TeacherSummary,
-     StudentEnrollCreate, StudentRead,
+    StudentEnrollCreate,
+    StudentRead,
+    StudentUpdate,
+
 )
 from app.admin.service import (
     create_timetable_entry,
@@ -20,7 +23,10 @@ from app.admin.service import (
     list_salary_records,
     list_teachers,
     get_admin_dashboard_summary,
-    enroll_student, list_students,
+    enroll_student,
+    list_students,
+    update_student_profile,
+    
 )
 
 
@@ -152,7 +158,28 @@ from app.admin.service import (
     get_revenue_summary,
     get_attendance_stats,
 )
+# add StudentUpdate to the schemas import, update_student_profile to the service import
 
+@router.patch("/students/{student_id}", response_model=StudentRead)
+async def patch_student(
+    student_id: uuid.UUID,
+    payload: StudentUpdate,
+    current_user: User = Depends(require_role("admin")),
+    db: AsyncSession = Depends(get_db),
+):
+    student = await update_student_profile(
+        db=db,
+        student_id=student_id,
+        grade=payload.grade,
+        section=payload.section,
+        roll_number=payload.roll_number,
+        parent_email=payload.parent_email,
+        phone=payload.phone,
+        address=payload.address,
+        guardian_name=payload.guardian_name,
+        guardian_phone=payload.guardian_phone,
+    )
+    return student
 
 @router.get("/debug/student-teacher-counts")
 async def debug_student_teacher_counts(
