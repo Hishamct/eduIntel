@@ -29,6 +29,9 @@ function mapStudent(s) {
     parentEmail: s.parent_email || "Not provided",
     guardianName: s.guardian_name || "Not provided",
     guardianPhone: s.guardian_phone || "Not provided",
+    // raw grade/section kept for pre-filling the edit form (mapped fields above are display-only)
+    grade: s.grade || "",
+    rawSection: s.section || "",
   };
 }
 
@@ -38,6 +41,11 @@ const emptyForm = {
   guardian_name: "", guardian_phone: "",
 };
 
+const emptyEditForm = {
+  grade: "", section: "Grade 12-A", roll_number: "", parent_email: "",
+  phone: "", address: "", guardian_name: "", guardian_phone: "",
+};
+
 export default function StudentRecords() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [selectedClass, setSelectedClass] = useState("All");
@@ -45,8 +53,12 @@ export default function StudentRecords() {
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isEnrollModalOpen, setIsEnrollModalOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [form, setForm] = useState(emptyForm);
+  const [editForm, setEditForm] = useState(emptyEditForm);
   const [isSaving, setIsSaving] = useState(false);
+  const [isEditSaving, setIsEditSaving] = useState(false);
+  const [isSendingReport, setIsSendingReport] = useState(false);
   const navigate = useNavigate();
 
   const fetchStudents = async () => {
@@ -82,6 +94,10 @@ export default function StudentRecords() {
     setForm((prev) => ({ ...prev, [field]: e.target.value }));
   };
 
+  const handleEditFormChange = (field) => (e) => {
+    setEditForm((prev) => ({ ...prev, [field]: e.target.value }));
+  };
+
   const handleEnrollStudent = async () => {
     if (!form.name || !form.email || !form.password) {
       alert("Name, email, and password are required.");
@@ -113,6 +129,60 @@ export default function StudentRecords() {
       console.error("Failed to enroll student:", err);
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleOpenEdit = () => {
+    setEditForm({
+      grade: selectedStudent.grade || "",
+      section: selectedStudent.rawSection || "Grade 12-A",
+      roll_number: selectedStudent.rollNumber === "--" ? "" : selectedStudent.rollNumber,
+      parent_email: selectedStudent.parentEmail === "Not provided" ? "" : selectedStudent.parentEmail,
+      phone: selectedStudent.phone === "Not provided" ? "" : selectedStudent.phone,
+      address: selectedStudent.address === "Not provided" ? "" : selectedStudent.address,
+      guardian_name: selectedStudent.guardianName === "Not provided" ? "" : selectedStudent.guardianName,
+      guardian_phone: selectedStudent.guardianPhone === "Not provided" ? "" : selectedStudent.guardianPhone,
+    });
+    setIsEditModalOpen(true);
+  };
+
+  const handleSaveEdit = async () => {
+    setIsEditSaving(true);
+    try {
+      const res = await apiClient.patch(`/admin/students/${selectedStudent.id}`, {
+        grade: editForm.grade || null,
+        section: editForm.section || null,
+        roll_number: editForm.roll_number || null,
+        parent_email: editForm.parent_email || null,
+        phone: editForm.phone || null,
+        address: editForm.address || null,
+        guardian_name: editForm.guardian_name || null,
+        guardian_phone: editForm.guardian_phone || null,
+      });
+      await fetchStudents();
+      setSelectedStudent(mapStudent(res.data));
+      setIsEditModalOpen(false);
+      alert("Contact details updated successfully!");
+    } catch (err) {
+      const detail = err.response?.data?.detail || "Failed to update contact details.";
+      alert(detail);
+      console.error("Failed to update student:", err);
+    } finally {
+      setIsEditSaving(false);
+    }
+  };
+
+  const handleSendReport = async () => {
+    setIsSendingReport(true);
+    try {
+      await apiClient.post(`/reports/parent-report/${selectedStudent.id}`);
+      alert(`Progress report sent to ${selectedStudent.parentEmail}`);
+    } catch (err) {
+      const detail = err.response?.data?.detail || "Failed to send report.";
+      alert(detail);
+      console.error("Failed to send parent report:", err);
+    } finally {
+      setIsSendingReport(false);
     }
   };
 
@@ -288,6 +358,29 @@ export default function StudentRecords() {
                   <p style={{ fontSize: "12px", fontWeight: 600, color: "#1B2330", margin: "6px 0 2px 0" }}>{selectedStudent.guardianName}</p>
                   <p style={{ fontSize: "12px", color: "#1B2330", margin: "2px 0" }}>📞 {selectedStudent.guardianPhone}</p>
                   <p style={{ fontSize: "12px", color: "#5F6774", margin: "2px 0 0 0" }}>✉️ {selectedStudent.parentEmail}</p>
+
+                  <div style={{ display: "flex", gap: "6px", marginTop: "10px" }}>
+                    <button
+                      onClick={handleOpenEdit}
+                      className="edu-btn-secondary"
+                      style={{ flex: 1, padding: "6px 10px", fontSize: "11px" }}
+                    >
+                      Edit Details
+                    </button>
+                    <button
+                      onClick={handleSendReport}
+                      disabled={isSendingReport || selectedStudent.parentEmail === "Not provided"}
+                      className="edu-btn-secondary"
+                      style={{
+                        flex: 1,
+                        padding: "6px 10px",
+                        fontSize: "11px",
+                        opacity: (isSendingReport || selectedStudent.parentEmail === "Not provided") ? 0.5 : 1
+                      }}
+                    >
+                      {isSendingReport ? "Sending..." : "Send Report"}
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -298,6 +391,67 @@ export default function StudentRecords() {
                 <p style={{ fontSize: "12px", color: "#92ADCF", margin: "6px 0 0 0" }}>
                   Attendance and GPA tracking unlock once the admin attendance module and ML analytics are live.
                 </p>
+              </div>
+            </div>
+          }
+        />
+      )}
+
+      {selectedStudent && (
+        <Modal
+          isOpen={isEditModalOpen}
+          onClose={() => setIsEditModalOpen(false)}
+          title={`Edit Contact Details: ${selectedStudent.name}`}
+          icon="edit"
+          iconVariant="info"
+          primaryLabel={isEditSaving ? "SAVING..." : "SAVE CHANGES"}
+          onPrimary={handleSaveEdit}
+          secondaryLabel="CANCEL"
+          onSecondary={() => setIsEditModalOpen(false)}
+          description={
+            <div style={{ display: "flex", flexDirection: "column", gap: "12px", textAlign: "left" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px" }}>
+                <div>
+                  <label style={labelStyle}>Grade</label>
+                  <input style={formFieldStyle} value={editForm.grade} onChange={handleEditFormChange("grade")} placeholder="12" />
+                </div>
+                <div>
+                  <label style={labelStyle}>Section</label>
+                  <select style={formFieldStyle} value={editForm.section} onChange={handleEditFormChange("section")}>
+                    {SECTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={labelStyle}>Roll Number</label>
+                  <input style={formFieldStyle} value={editForm.roll_number} onChange={handleEditFormChange("roll_number")} placeholder="12A-07" />
+                </div>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                <div>
+                  <label style={labelStyle}>Phone</label>
+                  <input style={formFieldStyle} value={editForm.phone} onChange={handleEditFormChange("phone")} placeholder="+91 98765 43210" />
+                </div>
+                <div>
+                  <label style={labelStyle}>Address</label>
+                  <input style={formFieldStyle} value={editForm.address} onChange={handleEditFormChange("address")} placeholder="Kaloor, Kochi" />
+                </div>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                <div>
+                  <label style={labelStyle}>Guardian Name</label>
+                  <input style={formFieldStyle} value={editForm.guardian_name} onChange={handleEditFormChange("guardian_name")} placeholder="Ramesh Krishnan" />
+                </div>
+                <div>
+                  <label style={labelStyle}>Guardian Phone</label>
+                  <input style={formFieldStyle} value={editForm.guardian_phone} onChange={handleEditFormChange("guardian_phone")} placeholder="+91 98765 43211" />
+                </div>
+              </div>
+
+              <div>
+                <label style={labelStyle}>Parent Email</label>
+                <input style={formFieldStyle} value={editForm.parent_email} onChange={handleEditFormChange("parent_email")} placeholder="parent@example.com" />
               </div>
             </div>
           }
