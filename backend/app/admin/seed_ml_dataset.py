@@ -1,6 +1,6 @@
 """
 Generates a realistic synthetic dataset: attendance, homework submissions,
-and per-topic exam results for synthetic students, spanning ~10 months.
+doubt threads, and per-topic exam results for synthetic students, spanning ~10 months.
 
 Built specifically to give the Week 4 ML models genuine learnable signal:
 - Archetypes correlate overall behavior with outcomes, WITH per-student noise
@@ -11,15 +11,28 @@ Built specifically to give the Week 4 ML models genuine learnable signal:
   score, and "weak-topic" prediction collapses into just "weak-student"
   prediction at a noisier level.
 
+IMPORTANT: HomeworkSubmission.created_at and DoubtThread/DoubtMessage.created_at
+are explicitly backdated to match each record's position in the synthetic
+10-month timeline. Without this, TimestampMixin's server_default=now() stamps
+every row with the real-world seed-run date, which silently breaks any
+feature engineering that filters by created_at against a synthetic date window
+(this caused homework_submission_rate and doubt_thread_count to be 0.0 for
+every student in the at-risk model's first training run).
+
+This script is safe to re-run: it deletes any previously-seeded synthetic
+students (email LIKE 'synth_student_%') and their related records before
+regenerating, so it won't hit unique-email constraint errors on a second run.
+
 Run: python -m app.admin.seed_ml_dataset
 """
 import asyncio
 import random
 import datetime
+from sqlalchemy import select, delete
 from app.core.database import AsyncSessionLocal  # confirm this is the real name
 from app.auth.security import hash_password
 from app.users.models import User, StudentProfile
-from app.student.models import HomeworkSubmission
+from app.student.models import HomeworkSubmission, DoubtThread, DoubtMessage
 from app.teacher.models import ExamResult
 from app.admin.models import Attendance
 
@@ -48,6 +61,17 @@ def clamp(val, lo, hi):
     return max(lo, min(hi, val))
 
 
+def random_time_on(date_obj):
+    """Combines a date with a random time-of-day, tz-aware, so backdated
+    records look realistic and correctly compare against feature-window
+    cutoffs computed from other tz-aware/date columns."""
+    return datetime.datetime.combine(
+        date_obj,
+        datetime.time(random.randint(8, 20), random.randint(0, 59)),
+        tzinfo=datetime.timezone.utc,
+    )
+
+
 def pick_archetype():
     r = random.random()
     cumulative = 0
@@ -71,8 +95,45 @@ def pick_archetype():
     return {"name": "average", "attendance": 0.85, "hw_rate": 0.75, "exam_base": 68, "trend": 0.0}
 
 
+async def cleanup_previous_run(db):
+    """Deletes any previously-seeded synthetic students and their related
+    records, so this script can be safely re-run (e.g. after fixing a bug
+    in how records were generated) without hitting unique-email violations
+    or silently duplicating the dataset."""
+    existing_ids_result = await db.execute(
+        select(User.id).where(User.email.like("synth_student_%"))
+    )
+    existing_ids = [row[0] for row in existing_ids_result.all()]
+
+    if not existing_ids:
+        return
+
+    print(f"Found {len(existing_ids)} synthetic students from a previous run — cleaning up first...")
+
+    # Delete children before parents to respect foreign key constraints.
+    # DoubtMessage references DoubtThread.id, so it goes first.
+    thread_ids_result = await db.execute(
+        select(DoubtThread.id).where(DoubtThread.student_id.in_(existing_ids))
+    )
+    thread_ids = [row[0] for row in thread_ids_result.all()]
+    if thread_ids:
+        await db.execute(delete(DoubtMessage).where(DoubtMessage.thread_id.in_(thread_ids)))
+    await db.execute(delete(DoubtThread).where(DoubtThread.student_id.in_(existing_ids)))
+
+    await db.execute(delete(HomeworkSubmission).where(HomeworkSubmission.student_id.in_(existing_ids)))
+    await db.execute(delete(ExamResult).where(ExamResult.student_id.in_(existing_ids)))
+    await db.execute(delete(Attendance).where(Attendance.student_id.in_(existing_ids)))
+    await db.execute(delete(StudentProfile).where(StudentProfile.user_id.in_(existing_ids)))
+    await db.execute(delete(User).where(User.id.in_(existing_ids)))
+
+    await db.commit()
+    print("Cleanup complete.")
+
+
 async def seed():
     async with AsyncSessionLocal() as db:
+        await cleanup_previous_run(db)
+
         today = datetime.date.today()
         start_date = today - datetime.timedelta(days=30 * MONTHS_BACK)
 
@@ -167,8 +228,44 @@ async def seed():
                             file_path="synthetic/placeholder.pdf",
                             original_filename="placeholder.pdf",
                             status="submitted",
+                            # Backdated to match this record's position in the synthetic
+                            # timeline — without this, TimestampMixin's server_default=now()
+                            # stamps every row with today's real date, which silently breaks
+                            # feature-window filtering in train_at_risk_model.py.
+                            created_at=random_time_on(week_cursor),
                         ))
                 week_cursor += datetime.timedelta(days=7)
+
+            # --- Doubt threads: occasional, correlated with engagement (hw_rate) ---
+            # Previously not seeded at all, which left doubt_thread_count at 0.0
+            # for every student in the at-risk model's feature set.
+            doubt_week_cursor = start_date
+            while doubt_week_cursor <= today:
+                doubt_prob = clamp(arch["hw_rate"] * 0.25, 0.03, 0.3)
+                if random.random() < doubt_prob:
+                    subject = random.choice(subjects)
+                    thread_time = random_time_on(doubt_week_cursor)
+
+                    thread = DoubtThread(
+                        student_id=student.id,
+                        subject=subject,
+                        title=f"Doubt about {subject.title()}",
+                        status=random.choice(["open", "resolved"]),
+                        created_at=thread_time,
+                    )
+                    db.add(thread)
+                    await db.flush()  # assigns thread.id so the message can reference it
+
+                    message = DoubtMessage(
+                        thread_id=thread.id,
+                        sender_id=student.id,
+                        sender_role="student",
+                        body="I'm having trouble understanding this topic, can someone help explain it?",
+                        created_at=thread_time,
+                    )
+                    db.add(message)
+
+                doubt_week_cursor += datetime.timedelta(days=7)
 
             # --- Exams: monthly per subject/topic ---
             # Score = archetype baseline + trend + noise, MINUS a consistent
@@ -201,6 +298,7 @@ async def seed():
                 month_cursor += datetime.timedelta(days=30)
 
         print(f"Inserting {len(attendance_records)} attendance, {len(homework_records)} homework, {len(exam_records)} exam records...")
+        print("(Doubt threads/messages were already flushed incrementally during generation above.)")
 
         BATCH_SIZE = 1000
         for i in range(0, len(attendance_records), BATCH_SIZE):
