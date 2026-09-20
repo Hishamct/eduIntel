@@ -70,18 +70,10 @@ def _months_of_history(attendance) -> float:
     return max(span_days / 30, 0.1)  # avoid divide-by-zero for brand-new students
 
 
-async def get_at_risk_prediction(db: AsyncSession, student_id: uuid.UUID) -> dict:
-    attendance, homework, exams, doubts = await _get_student_history(db, student_id)
-
-    if not attendance or not exams:
-        return {
-            "student_id": student_id,
-            "is_at_risk": False,
-            "risk_probability": None,
-            "features_used": {},
-            "note": "Insufficient history to generate a prediction (needs attendance and exam records).",
-        }
-
+def _compute_at_risk_features(attendance, homework, exams, doubts) -> dict:
+    """Shared feature-computation used by both get_at_risk_prediction (below)
+    and app/ml/explain.py's SHAP explanation, so predictions and their
+    explanations can never silently drift out of sync."""
     attendance_rate = sum(1 for a in attendance if a.status in ("present", "late")) / len(attendance)
 
     months = _months_of_history(attendance)
@@ -99,13 +91,28 @@ async def get_at_risk_prediction(db: AsyncSession, student_id: uuid.UUID) -> dic
     avg_score_overall = np.mean([float(e.score) for e in exams])
     doubt_count = len(doubts)
 
-    features = {
+    return {
         "attendance_rate": round(attendance_rate, 3),
         "homework_submission_rate": round(homework_rate, 3),
         "avg_score_overall": round(float(avg_score_overall), 2),
         "score_trend": round(float(score_trend), 2),
         "doubt_thread_count": doubt_count,
     }
+
+
+async def get_at_risk_prediction(db: AsyncSession, student_id: uuid.UUID) -> dict:
+    attendance, homework, exams, doubts = await _get_student_history(db, student_id)
+
+    if not attendance or not exams:
+        return {
+            "student_id": student_id,
+            "is_at_risk": False,
+            "risk_probability": None,
+            "features_used": {},
+            "note": "Insufficient history to generate a prediction (needs attendance and exam records).",
+        }
+
+    features = _compute_at_risk_features(attendance, homework, exams, doubts)
 
     bundle = _load_at_risk_model()
     model = bundle["model"]
