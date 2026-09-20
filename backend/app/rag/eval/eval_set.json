@@ -1,0 +1,17 @@
+[
+  {"collection": "portal_help_docs", "query": "How do I submit my homework?"},
+  {"collection": "portal_help_docs", "query": "How do I ask a doubt on the platform?"},
+  {"collection": "portal_help_docs", "query": "Where can I find study materials uploaded by my teachers?"},
+  {"collection": "portal_help_docs", "query": "What does the Self-Evaluation page show me?"},
+  {"collection": "portal_help_docs", "query": "What information appears on my dashboard right after I log in?"},
+  {"collection": "portal_help_docs", "query": "I forgot my password, what should I do?"},
+  {"collection": "portal_help_docs", "query": "Can I pay my tuition fees through the student portal?", "note": "adversarial: not covered in help docs, expect fallback rather than a guess"},
+
+  {"collection": "study_materials", "query": "What is the domain of the sine and cosine functions?", "note": "real content: Trigonometry NCERT excerpt"},
+  {"collection": "study_materials", "query": "How does sin x behave as x increases from 0 to pi/2?", "note": "real content: Trigonometry excerpt"},
+  {"collection": "study_materials", "query": "What are the key areas covered in the Algebra study notes?"},
+  {"collection": "study_materials", "query": "What is the most common root cause of difficulty in Trigonometry, according to the study notes?"},
+  {"collection": "study_materials", "query": "What do the Acids & Bases study notes cover?"},
+  {"collection": "study_materials", "query": "Explain Newton's second law of motion in detail, including its mathematical derivation.", "note": "adversarial: Mechanics notes are generic/templated, no real derivation exists in the source"},
+  {"collection": "study_materials", "query": "Summarize the theory of relativity.", "note": "adversarial: not in the knowledge base at all"}
+]
