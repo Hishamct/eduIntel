@@ -21,6 +21,11 @@ export default function FlaggedStudents() {
 
   const [loadingWorksheetKey, setLoadingWorksheetKey] = useState(null);
 
+  // SHAP explanation state — fetched on demand, separate from the initial diagnosis call
+  const [explanation, setExplanation] = useState(null);
+  const [isLoadingExplanation, setIsLoadingExplanation] = useState(false);
+  const [explanationError, setExplanationError] = useState("");
+
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -41,6 +46,8 @@ export default function FlaggedStudents() {
     setDiagnosis(null);
     setDiagnosisError("");
     setRecommendations({});
+    setExplanation(null);
+    setExplanationError("");
     setIsDiagnosing(true);
 
     try {
@@ -51,6 +58,21 @@ export default function FlaggedStudents() {
       setDiagnosisError("Could not generate a risk assessment for this student. They may not have enough history yet.");
     } finally {
       setIsDiagnosing(false);
+    }
+  };
+
+  const handleGetExplanation = async () => {
+    if (!selectedStudent) return;
+    setIsLoadingExplanation(true);
+    setExplanationError("");
+    try {
+      const { data } = await apiClient.get(`/ml/explain/at-risk/${selectedStudent.id}`);
+      setExplanation(data);
+    } catch (err) {
+      console.error("SHAP explanation failed:", err);
+      setExplanationError("Could not generate an explanation for this student right now.");
+    } finally {
+      setIsLoadingExplanation(false);
     }
   };
 
@@ -225,6 +247,80 @@ export default function FlaggedStudents() {
                       <span style={{ fontSize: "12px", color: "#5F6774", marginLeft: "10px" }}>
                         Confidence: {(diagnosis.risk_probability * 100).toFixed(0)}%
                       </span>
+                    )}
+                  </div>
+
+                  {/* --- SHAP explainability: why did the model produce this score? --- */}
+                  <div style={{ marginBottom: "16px" }}>
+                    {!explanation && !isLoadingExplanation && (
+                      <button
+                        onClick={handleGetExplanation}
+                        className="edu-btn-secondary"
+                        style={{ padding: "6px 12px", fontSize: "11px" }}
+                      >
+                        Why is this student flagged?
+                      </button>
+                    )}
+
+                    {isLoadingExplanation && (
+                      <p style={{ fontSize: "12px", color: "#5F6774", fontStyle: "italic" }}>
+                        Analyzing contributing factors...
+                      </p>
+                    )}
+
+                    {explanationError && (
+                      <p style={{ fontSize: "12px", color: "#B23A2E" }}>{explanationError}</p>
+                    )}
+
+                    {explanation && explanation.top_factors?.length > 0 && (
+                      <div
+                        style={{
+                          border: "1px solid #E5E5E1",
+                          borderRadius: "6px",
+                          padding: "12px",
+                          backgroundColor: "#FAFAF7",
+                        }}
+                      >
+                        <p style={{ fontSize: "11px", fontWeight: 700, color: "#5F6774", textTransform: "uppercase", margin: "0 0 8px 0" }}>
+                          Why the Model Scored This Student This Way
+                        </p>
+                        <p style={{ fontSize: "12px", color: "#1B2330", margin: "0 0 12px 0", lineHeight: 1.5 }}>
+                          {explanation.summary}
+                        </p>
+
+                        {explanation.top_factors.map((f) => {
+                          const isIncreasing = f.direction === "increases_risk";
+                          return (
+                            <div
+                              key={f.feature}
+                              style={{
+                                display: "flex",
+                                justifyContent: "space-between",
+                                alignItems: "center",
+                                padding: "8px 10px",
+                                borderLeft: `4px solid ${isIncreasing ? "#B23A2E" : "#2F7A52"}`,
+                                backgroundColor: "#FFFFFF",
+                                marginBottom: "6px",
+                                fontSize: "12px",
+                              }}
+                            >
+                              <div>
+                                <span style={{ fontWeight: 600, color: "#1B2330" }}>{f.label}</span>
+                                <span style={{ color: "#5F6774", marginLeft: "6px" }}>({f.value})</span>
+                              </div>
+                              <span style={{ fontWeight: 700, color: isIncreasing ? "#B23A2E" : "#2F7A52" }}>
+                                {isIncreasing ? "↑ increases risk" : "↓ reduces risk"}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {explanation && explanation.top_factors?.length === 0 && (
+                      <p style={{ fontSize: "12px", color: "#5F6774" }}>
+                        {explanation.summary}
+                      </p>
                     )}
                   </div>
 
