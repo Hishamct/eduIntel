@@ -13,3 +13,4 @@ python-dotenvaiofiles==25.1.0
 aiofiles==25.1.0
 groq-1.7.0
 mcp==1.30.0
+shap==0.52.0
