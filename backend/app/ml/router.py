@@ -6,6 +6,7 @@ from app.users.models import User
 from app.core.database import get_db
 from app.ml.schemas import AtRiskPrediction, WeakTopicResponse
 from app.ml.service import get_at_risk_prediction, get_weak_topic_predictions
+from app.ml.explain import get_at_risk_explanation
 
 router = APIRouter(prefix="/ml", tags=["ml"])
 
@@ -29,6 +30,14 @@ async def predict_at_risk_admin(
     result = await get_at_risk_prediction(db=db, student_id=student_id)
     return result
 
+@router.get("/explain/at-risk/{student_id}")
+async def explain_at_risk(
+    student_id: uuid.UUID,
+    current_user: User = Depends(require_role("teacher")),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await get_at_risk_explanation(db=db, student_id=student_id)
+    return result
 
 @router.get("/predict/weak-topics/{student_id}", response_model=WeakTopicResponse)
 async def predict_weak_topics(
