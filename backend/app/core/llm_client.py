@@ -38,9 +38,22 @@ def _is_rate_limit_error(e: Exception) -> bool:
     (google.genai.errors.ClientError / APIError are common). Checking the
     message text instead of a specific exception class keeps this working
     even if the exact error type differs in your installed SDK version.
+
+    Covers both quota exhaustion (429/RESOURCE_EXHAUSTED) and transient
+    server-side unavailability (503/UNAVAILABLE, "overloaded"/"high demand")
+    — either way, we want to fall back to Groq rather than crash the request.
     """
     msg = str(e)
-    return "RESOURCE_EXHAUSTED" in msg or "429" in msg or "quota" in msg.lower()
+    msg_lower = msg.lower()
+    return (
+        "RESOURCE_EXHAUSTED" in msg
+        or "429" in msg
+        or "quota" in msg_lower
+        or "503" in msg
+        or "UNAVAILABLE" in msg
+        or "overloaded" in msg_lower
+        or "high demand" in msg_lower
+    )
 
 
 def _generate_text_impl(prompt: str) -> tuple[str, LLMCallUsage]:
