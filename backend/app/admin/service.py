@@ -1,13 +1,16 @@
-from sqlalchemy.ext.asyncio import AsyncSession
-from app.admin.models import Timetable, SalaryRecord
 import uuid
-from sqlalchemy import select, func
-from fastapi import HTTPException
-from app.auth.security import hash_password
-from app.users.models import User, StudentProfile
 from datetime import date
+
+from fastapi import HTTPException
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+
+from app.admin.models import SalaryRecord, Timetable
+from app.auth.security import hash_password
 from app.student.models import HomeworkSubmission
+from app.users.models import StudentProfile, User
+
 
 async def create_timetable_entry(
     db: AsyncSession,
@@ -73,11 +76,10 @@ async def list_salary_records(db: AsyncSession, teacher_id: uuid.UUID | None = N
     return result.scalars().all()
 
 
-
-
 async def list_teachers(db: AsyncSession):
     result = await db.execute(select(User).where(User.role == "teacher"))
     return result.scalars().all()
+
 
 async def get_admin_dashboard_summary(db: AsyncSession) -> dict:
     students_result = await db.execute(
@@ -96,8 +98,6 @@ async def get_admin_dashboard_summary(db: AsyncSession) -> dict:
     }
 
 
-
-
 async def enroll_student(
     db: AsyncSession,
     email: str,
@@ -114,7 +114,9 @@ async def enroll_student(
 ) -> dict:
     existing = await db.execute(select(User).where(User.email == email))
     if existing.scalar_one_or_none() is not None:
-        raise HTTPException(status_code=400, detail="A user with this email already exists")
+        raise HTTPException(
+            status_code=400, detail="A user with this email already exists"
+        )
 
     user = User(
         email=email,
@@ -184,6 +186,7 @@ async def list_students(db: AsyncSession):
         for user, profile in rows
     ]
 
+
 async def update_student_profile(
     db: AsyncSession,
     student_id: uuid.UUID,
@@ -242,7 +245,8 @@ async def update_student_profile(
         "created_at": user.created_at,
     }
 
-from app.admin.models import FeeRecord, Attendance
+
+from app.admin.models import Attendance, FeeRecord
 
 
 async def get_revenue_summary(db: AsyncSession, month: date | None = None) -> dict:
@@ -269,7 +273,9 @@ async def get_revenue_summary(db: AsyncSession, month: date | None = None) -> di
     }
 
 
-async def get_attendance_stats(db: AsyncSession, class_section: str | None = None) -> dict:
+async def get_attendance_stats(
+    db: AsyncSession, class_section: str | None = None
+) -> dict:
     """Real attendance data from Attendance. Computes attendance % overall and per section."""
     query = select(Attendance)
     if class_section:
@@ -282,7 +288,9 @@ async def get_attendance_stats(db: AsyncSession, class_section: str | None = Non
 
     by_section: dict[str, dict] = {}
     for r in records:
-        sec = by_section.setdefault(r.class_section, {"present": 0, "absent": 0, "late": 0, "total": 0})
+        sec = by_section.setdefault(
+            r.class_section, {"present": 0, "absent": 0, "late": 0, "total": 0}
+        )
         sec[r.status] += 1
         sec["total"] += 1
 
@@ -299,6 +307,7 @@ async def get_attendance_stats(db: AsyncSession, class_section: str | None = Non
         "overall_attendance_percent": overall_percent,
         "total_records": len(records),
     }
+
 
 async def get_student_teacher_counts(db: AsyncSession) -> dict:
     students_result = await db.execute(
@@ -347,7 +356,9 @@ async def get_salary_summary(db: AsyncSession, month: date | None = None) -> dic
     }
 
 
-async def get_timetable_coverage(db: AsyncSession, class_section: str | None = None) -> dict:
+async def get_timetable_coverage(
+    db: AsyncSession, class_section: str | None = None
+) -> dict:
     query = select(Timetable)
     if class_section:
         query = query.where(Timetable.class_section == class_section)
@@ -356,7 +367,9 @@ async def get_timetable_coverage(db: AsyncSession, class_section: str | None = N
 
     by_section: dict[str, dict] = {}
     for entry in entries:
-        sec = by_section.setdefault(entry.class_section, {"total_periods": 0, "unassigned_periods": 0})
+        sec = by_section.setdefault(
+            entry.class_section, {"total_periods": 0, "unassigned_periods": 0}
+        )
         sec["total_periods"] += 1
         if entry.teacher_id is None:
             sec["unassigned_periods"] += 1
@@ -381,11 +394,14 @@ async def get_teacher_grading_performance(db: AsyncSession) -> dict:
         teacher_key = str(sub.graded_by)
         turnaround_hours = (sub.updated_at - sub.created_at).total_seconds() / 3600
 
-        entry = by_teacher.setdefault(teacher_key, {
-            "teacher_email": sub.grader.email if sub.grader else "unknown",
-            "graded_count": 0,
-            "_turnaround_sum_hours": 0.0,
-        })
+        entry = by_teacher.setdefault(
+            teacher_key,
+            {
+                "teacher_email": sub.grader.email if sub.grader else "unknown",
+                "graded_count": 0,
+                "_turnaround_sum_hours": 0.0,
+            },
+        )
         entry["graded_count"] += 1
         entry["_turnaround_sum_hours"] += turnaround_hours
 
@@ -396,4 +412,3 @@ async def get_teacher_grading_performance(db: AsyncSession) -> dict:
         del entry["_turnaround_sum_hours"]
 
     return {"teachers": by_teacher, "total_graded_submissions": len(graded_submissions)}
-

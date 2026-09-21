@@ -1,6 +1,8 @@
-from uuid import UUID
-from pydantic import BaseModel, ConfigDict
 from datetime import date, datetime
+from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict
+
 
 class TimetableEntryCreate(BaseModel):
     class_section: str
@@ -42,11 +44,13 @@ class SalaryRecordRead(BaseModel):
     payment_status: str
     created_at: datetime
 
+
 class TeacherSummary(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
     email: str
+
 
 class StudentEnrollCreate(BaseModel):
     email: str
@@ -60,6 +64,7 @@ class StudentEnrollCreate(BaseModel):
     address: str | None = None
     guardian_name: str | None = None
     guardian_phone: str | None = None
+
 
 class StudentUpdate(BaseModel):
     grade: str | None = None
@@ -87,4 +92,3 @@ class StudentRead(BaseModel):
     guardian_name: str | None
     guardian_phone: str | None
     created_at: datetime
-

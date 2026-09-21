@@ -25,16 +25,19 @@ regenerating, so it won't hit unique-email constraint errors on a second run.
 
 Run: python -m app.admin.seed_ml_dataset
 """
+
 import asyncio
-import random
 import datetime
-from sqlalchemy import select, delete
-from app.core.database import AsyncSessionLocal  # confirm this is the real name
-from app.auth.security import hash_password
-from app.users.models import User, StudentProfile
-from app.student.models import HomeworkSubmission, DoubtThread, DoubtMessage
-from app.teacher.models import ExamResult
+import random
+
+from sqlalchemy import delete, select
+
 from app.admin.models import Attendance
+from app.auth.security import hash_password
+from app.core.database import AsyncSessionLocal  # confirm this is the real name
+from app.student.models import DoubtMessage, DoubtThread, HomeworkSubmission
+from app.teacher.models import ExamResult
+from app.users.models import StudentProfile, User
 
 N_STUDENTS = 500
 MONTHS_BACK = 10
@@ -42,18 +45,23 @@ CLASS_SECTIONS = ["8-A", "8-B", "9-A", "9-B", "10-A", "10-B", "11-A", "11-B", "1
 SUBJECT_TOPICS = {
     "MATHEMATICS": ["Algebra", "Trigonometry", "Calculus", "Geometry", "Statistics"],
     "PHYSICS": ["Mechanics", "Thermodynamics", "Optics", "Electromagnetism"],
-    "CHEMISTRY": ["Organic Chemistry", "Periodic Table", "Chemical Bonding", "Acids & Bases"],
+    "CHEMISTRY": [
+        "Organic Chemistry",
+        "Periodic Table",
+        "Chemical Bonding",
+        "Acids & Bases",
+    ],
     "COMPUTER SCIENCE": ["Data Structures", "Algorithms", "Databases", "Networking"],
 }
 ALL_TOPICS_FLAT = [(subj, t) for subj, topics in SUBJECT_TOPICS.items() for t in topics]
 
 # --- Behavioral archetypes: (name, weight, attendance_base, homework_rate_base, exam_base, trend_per_month) ---
 ARCHETYPES = [
-    ("strong",         0.20,   0.95,       0.92,      85,        +0.3),
-    ("average",        0.35,   0.85,       0.75,      68,         0.0),
-    ("improving",      0.15,   0.80,       0.65,      55,        +1.8),
-    ("declining",      0.15,   0.88,       0.80,      75,        -1.6),
-    ("at_risk",        0.15,   0.65,       0.45,      42,        -0.5),
+    ("strong", 0.20, 0.95, 0.92, 85, +0.3),
+    ("average", 0.35, 0.85, 0.75, 68, 0.0),
+    ("improving", 0.15, 0.80, 0.65, 55, +1.8),
+    ("declining", 0.15, 0.88, 0.80, 75, -1.6),
+    ("at_risk", 0.15, 0.65, 0.45, 42, -0.5),
 ]
 
 
@@ -68,7 +76,7 @@ def random_time_on(date_obj):
     return datetime.datetime.combine(
         date_obj,
         datetime.time(random.randint(8, 20), random.randint(0, 59)),
-        tzinfo=datetime.timezone.utc,
+        tzinfo=datetime.UTC,
     )
 
 
@@ -92,7 +100,13 @@ def pick_archetype():
                 "exam_base": clamp(exam + exam_noise, 10, 98),
                 "trend": trend + trend_noise,
             }
-    return {"name": "average", "attendance": 0.85, "hw_rate": 0.75, "exam_base": 68, "trend": 0.0}
+    return {
+        "name": "average",
+        "attendance": 0.85,
+        "hw_rate": 0.75,
+        "exam_base": 68,
+        "trend": 0.0,
+    }
 
 
 async def cleanup_previous_run(db):
@@ -108,7 +122,9 @@ async def cleanup_previous_run(db):
     if not existing_ids:
         return
 
-    print(f"Found {len(existing_ids)} synthetic students from a previous run — cleaning up first...")
+    print(
+        f"Found {len(existing_ids)} synthetic students from a previous run — cleaning up first..."
+    )
 
     # Delete children before parents to respect foreign key constraints.
     # DoubtMessage references DoubtThread.id, so it goes first.
@@ -117,13 +133,23 @@ async def cleanup_previous_run(db):
     )
     thread_ids = [row[0] for row in thread_ids_result.all()]
     if thread_ids:
-        await db.execute(delete(DoubtMessage).where(DoubtMessage.thread_id.in_(thread_ids)))
-    await db.execute(delete(DoubtThread).where(DoubtThread.student_id.in_(existing_ids)))
+        await db.execute(
+            delete(DoubtMessage).where(DoubtMessage.thread_id.in_(thread_ids))
+        )
+    await db.execute(
+        delete(DoubtThread).where(DoubtThread.student_id.in_(existing_ids))
+    )
 
-    await db.execute(delete(HomeworkSubmission).where(HomeworkSubmission.student_id.in_(existing_ids)))
+    await db.execute(
+        delete(HomeworkSubmission).where(
+            HomeworkSubmission.student_id.in_(existing_ids)
+        )
+    )
     await db.execute(delete(ExamResult).where(ExamResult.student_id.in_(existing_ids)))
     await db.execute(delete(Attendance).where(Attendance.student_id.in_(existing_ids)))
-    await db.execute(delete(StudentProfile).where(StudentProfile.user_id.in_(existing_ids)))
+    await db.execute(
+        delete(StudentProfile).where(StudentProfile.user_id.in_(existing_ids))
+    )
     await db.execute(delete(User).where(User.id.in_(existing_ids)))
 
     await db.commit()
@@ -137,7 +163,9 @@ async def seed():
         today = datetime.date.today()
         start_date = today - datetime.timedelta(days=30 * MONTHS_BACK)
 
-        print(f"Generating {N_STUDENTS} synthetic students with {MONTHS_BACK} months of history...")
+        print(
+            f"Generating {N_STUDENTS} synthetic students with {MONTHS_BACK} months of history..."
+        )
 
         students_data = []
         for i in range(N_STUDENTS):
@@ -164,14 +192,20 @@ async def seed():
 
             # Each student gets 0-2 personal weak topics, independent of archetype.
             n_weak_topics = random.choice([0, 1, 1, 2])
-            weak_topics = set(random.sample(ALL_TOPICS_FLAT, n_weak_topics)) if n_weak_topics else set()
+            weak_topics = (
+                set(random.sample(ALL_TOPICS_FLAT, n_weak_topics))
+                if n_weak_topics
+                else set()
+            )
 
-            students_data.append({
-                "user": user,
-                "class_section": class_section,
-                "archetype": archetype,
-                "weak_topics": weak_topics,
-            })
+            students_data.append(
+                {
+                    "user": user,
+                    "class_section": class_section,
+                    "archetype": archetype,
+                    "weak_topics": weak_topics,
+                }
+            )
 
         await db.commit()
         print(f"Created {len(students_data)} student accounts.")
@@ -192,7 +226,9 @@ async def seed():
                 if day_cursor.weekday() < 5:
                     months_elapsed = (day_cursor - start_date).days / 30
                     trend_adjustment = (arch["trend"] / 100) * months_elapsed
-                    attend_prob = clamp(arch["attendance"] + trend_adjustment, 0.3, 0.99)
+                    attend_prob = clamp(
+                        arch["attendance"] + trend_adjustment, 0.3, 0.99
+                    )
 
                     roll = random.random()
                     if roll < attend_prob:
@@ -202,12 +238,14 @@ async def seed():
                     else:
                         status = "absent"
 
-                    attendance_records.append(Attendance(
-                        student_id=student.id,
-                        class_section=class_section,
-                        date=day_cursor,
-                        status=status,
-                    ))
+                    attendance_records.append(
+                        Attendance(
+                            student_id=student.id,
+                            class_section=class_section,
+                            date=day_cursor,
+                            status=status,
+                        )
+                    )
                 day_cursor += datetime.timedelta(days=1)
 
             # --- Homework: weekly per subject, correlated with hw_rate ---
@@ -220,20 +258,22 @@ async def seed():
                     submit_prob = clamp(arch["hw_rate"] + trend_adjustment, 0.1, 0.98)
 
                     if random.random() < submit_prob:
-                        homework_records.append(HomeworkSubmission(
-                            student_id=student.id,
-                            subject=subject,
-                            title=f"{subject.title()} Weekly Practice",
-                            description="Auto-generated synthetic submission",
-                            file_path="synthetic/placeholder.pdf",
-                            original_filename="placeholder.pdf",
-                            status="submitted",
-                            # Backdated to match this record's position in the synthetic
-                            # timeline — without this, TimestampMixin's server_default=now()
-                            # stamps every row with today's real date, which silently breaks
-                            # feature-window filtering in train_at_risk_model.py.
-                            created_at=random_time_on(week_cursor),
-                        ))
+                        homework_records.append(
+                            HomeworkSubmission(
+                                student_id=student.id,
+                                subject=subject,
+                                title=f"{subject.title()} Weekly Practice",
+                                description="Auto-generated synthetic submission",
+                                file_path="synthetic/placeholder.pdf",
+                                original_filename="placeholder.pdf",
+                                status="submitted",
+                                # Backdated to match this record's position in the synthetic
+                                # timeline — without this, TimestampMixin's server_default=now()
+                                # stamps every row with today's real date, which silently breaks
+                                # feature-window filtering in train_at_risk_model.py.
+                                created_at=random_time_on(week_cursor),
+                            )
+                        )
                 week_cursor += datetime.timedelta(days=7)
 
             # --- Doubt threads: occasional, correlated with engagement (hw_rate) ---
@@ -254,7 +294,9 @@ async def seed():
                         created_at=thread_time,
                     )
                     db.add(thread)
-                    await db.flush()  # assigns thread.id so the message can reference it
+                    await (
+                        db.flush()
+                    )  # assigns thread.id so the message can reference it
 
                     message = DoubtMessage(
                         thread_id=thread.id,
@@ -279,38 +321,46 @@ async def seed():
 
                 for subject, topics in SUBJECT_TOPICS.items():
                     topic = random.choice(topics)
-                    base_score = arch["exam_base"] + trend_adjustment + random.gauss(0, 8)
+                    base_score = (
+                        arch["exam_base"] + trend_adjustment + random.gauss(0, 8)
+                    )
 
                     if (subject, topic) in weak_topics:
                         base_score -= random.gauss(18, 5)
 
                     base_score = clamp(base_score, 5, 100)
 
-                    exam_records.append(ExamResult(
-                        student_id=student.id,
-                        class_section=class_section,
-                        subject=subject,
-                        topic=topic,
-                        exam_date=month_cursor,
-                        score=round(base_score, 2),
-                        max_score=100,
-                    ))
+                    exam_records.append(
+                        ExamResult(
+                            student_id=student.id,
+                            class_section=class_section,
+                            subject=subject,
+                            topic=topic,
+                            exam_date=month_cursor,
+                            score=round(base_score, 2),
+                            max_score=100,
+                        )
+                    )
                 month_cursor += datetime.timedelta(days=30)
 
-        print(f"Inserting {len(attendance_records)} attendance, {len(homework_records)} homework, {len(exam_records)} exam records...")
-        print("(Doubt threads/messages were already flushed incrementally during generation above.)")
+        print(
+            f"Inserting {len(attendance_records)} attendance, {len(homework_records)} homework, {len(exam_records)} exam records..."
+        )
+        print(
+            "(Doubt threads/messages were already flushed incrementally during generation above.)"
+        )
 
         BATCH_SIZE = 1000
         for i in range(0, len(attendance_records), BATCH_SIZE):
-            db.add_all(attendance_records[i:i + BATCH_SIZE])
+            db.add_all(attendance_records[i : i + BATCH_SIZE])
             await db.commit()
 
         for i in range(0, len(homework_records), BATCH_SIZE):
-            db.add_all(homework_records[i:i + BATCH_SIZE])
+            db.add_all(homework_records[i : i + BATCH_SIZE])
             await db.commit()
 
         for i in range(0, len(exam_records), BATCH_SIZE):
-            db.add_all(exam_records[i:i + BATCH_SIZE])
+            db.add_all(exam_records[i : i + BATCH_SIZE])
             await db.commit()
 
         print("Done. Synthetic dataset ready for ML training.")

@@ -1,35 +1,32 @@
-from fastapi import APIRouter, Depends
-from typing import List
 import uuid
+
+from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.users.dependencies import require_role
-from app.users.models import User
-from app.core.database import get_db
+
 from app.admin.schemas import (
-    TimetableEntryCreate,
-    TimetableEntryRead,
     SalaryRecordCreate,
     SalaryRecordRead,
-    TeacherSummary,
     StudentEnrollCreate,
     StudentRead,
     StudentUpdate,
-
+    TeacherSummary,
+    TimetableEntryCreate,
+    TimetableEntryRead,
 )
 from app.admin.service import (
-    create_timetable_entry,
-    list_timetable,
     create_salary_record,
-    list_salary_records,
-    list_teachers,
-    get_admin_dashboard_summary,
+    create_timetable_entry,
     enroll_student,
+    get_admin_dashboard_summary,
+    list_salary_records,
     list_students,
+    list_teachers,
+    list_timetable,
     update_student_profile,
-    
 )
-
-
+from app.core.database import get_db
+from app.users.dependencies import require_role
+from app.users.models import User
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -67,7 +64,7 @@ async def post_timetable_entry(
     return entry
 
 
-@router.get("/timetable", response_model=List[TimetableEntryRead])
+@router.get("/timetable", response_model=list[TimetableEntryRead])
 async def get_timetable(
     class_section: str | None = None,
     current_user: User = Depends(require_role("admin")),
@@ -96,7 +93,7 @@ async def post_salary_record(
     return record
 
 
-@router.get("/salary", response_model=List[SalaryRecordRead])
+@router.get("/salary", response_model=list[SalaryRecordRead])
 async def get_salary_records(
     teacher_id: uuid.UUID | None = None,
     current_user: User = Depends(require_role("admin")),
@@ -106,15 +103,13 @@ async def get_salary_records(
     return records
 
 
-@router.get("/teachers", response_model=List[TeacherSummary])
+@router.get("/teachers", response_model=list[TeacherSummary])
 async def get_teachers(
     current_user: User = Depends(require_role("admin")),
     db: AsyncSession = Depends(get_db),
 ):
     teachers = await list_teachers(db=db)
     return teachers
-
-
 
 
 @router.post("/students", response_model=StudentRead)
@@ -140,7 +135,7 @@ async def post_student(
     return student
 
 
-@router.get("/students", response_model=List[StudentRead])
+@router.get("/students", response_model=list[StudentRead])
 async def get_students(
     current_user: User = Depends(require_role("admin")),
     db: AsyncSession = Depends(get_db),
@@ -150,15 +145,18 @@ async def get_students(
 
 
 from datetime import date
+
 from app.admin.service import (
-    get_student_teacher_counts,
-    get_salary_summary,
-    get_timetable_coverage,
-    get_teacher_grading_performance,
-    get_revenue_summary,
     get_attendance_stats,
+    get_revenue_summary,
+    get_salary_summary,
+    get_student_teacher_counts,
+    get_teacher_grading_performance,
+    get_timetable_coverage,
 )
+
 # add StudentUpdate to the schemas import, update_student_profile to the service import
+
 
 @router.patch("/students/{student_id}", response_model=StudentRead)
 async def patch_student(
@@ -180,6 +178,7 @@ async def patch_student(
         guardian_phone=payload.guardian_phone,
     )
     return student
+
 
 @router.get("/debug/student-teacher-counts")
 async def debug_student_teacher_counts(
