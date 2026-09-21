@@ -1,7 +1,8 @@
-import pytesseract
-from PIL import Image
 import io
+
+import pytesseract
 from fastapi import HTTPException
+from PIL import Image
 from pypdf import PdfReader
 
 
@@ -16,9 +17,11 @@ def extract_text(file_bytes: bytes) -> dict:
 
         data = pytesseract.image_to_data(image, output_type=pytesseract.Output.DICT)
         confidences = [int(c) for c in data["conf"] if c != "-1"]
-        avg_confidence = (sum(confidences) / len(confidences) / 100) if confidences else None
+        avg_confidence = (
+            (sum(confidences) / len(confidences) / 100) if confidences else None
+        )
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"OCR engine error: {str(e)}")
+        raise HTTPException(status_code=502, detail=f"OCR engine error: {e!s}")
 
     return {
         "extracted_text": text.strip(),
@@ -37,7 +40,7 @@ def extract_text_from_pdf(file_bytes: bytes) -> dict:
         text_parts = [page.extract_text() or "" for page in reader.pages]
         full_text = "\n".join(text_parts).strip()
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"PDF extraction error: {str(e)}")
+        raise HTTPException(status_code=502, detail=f"PDF extraction error: {e!s}")
 
     return {
         "extracted_text": full_text,

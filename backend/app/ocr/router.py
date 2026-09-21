@@ -1,6 +1,7 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException
-from app.ocr.schemas import OcrExtractResponse
+from fastapi import APIRouter, File, HTTPException, UploadFile
+
 from app.ocr import service
+from app.ocr.schemas import OcrExtractResponse
 
 router = APIRouter(prefix="/ocr", tags=["ocr"])
 
@@ -12,7 +13,7 @@ async def extract_text_from_image(file: UploadFile = File(...)):
     if file.content_type not in ALLOWED_CONTENT_TYPES:
         raise HTTPException(
             status_code=400,
-            detail=f"Unsupported file type: {file.content_type}. Use JPEG, PNG, or WebP."
+            detail=f"Unsupported file type: {file.content_type}. Use JPEG, PNG, or WebP.",
         )
 
     file_bytes = await file.read()
