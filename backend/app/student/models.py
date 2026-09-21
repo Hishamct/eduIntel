@@ -1,16 +1,22 @@
-from sqlalchemy import String, ForeignKey, Enum, Text, Float
+import uuid
+
+from sqlalchemy import Enum, Float, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
 from app.core.database import Base
 from app.core.models import TimestampMixin
-import uuid
-from app.users.models import User  # noqa: F401 — needed for the relationship() string reference to resolve
+from app.users.models import (
+    User,
+)
 
 
 class HomeworkSubmission(Base, TimestampMixin):
     __tablename__ = "homework_submissions"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    student_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    student_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id"), nullable=False, index=True
+    )
     subject: Mapped[str] = mapped_column(String, nullable=False)
     title: Mapped[str] = mapped_column(String, nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=True)
@@ -37,7 +43,9 @@ class DoubtThread(Base, TimestampMixin):
     __tablename__ = "doubt_threads"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    student_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    student_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id"), nullable=False, index=True
+    )
     subject: Mapped[str] = mapped_column(String, nullable=False)
     title: Mapped[str] = mapped_column(String, nullable=False)
     status: Mapped[str] = mapped_column(
@@ -58,7 +66,9 @@ class DoubtMessage(Base, TimestampMixin):
     __tablename__ = "doubt_messages"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    thread_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("doubt_threads.id"), nullable=False, index=True)
+    thread_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("doubt_threads.id"), nullable=False, index=True
+    )
     sender_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
     sender_role: Mapped[str] = mapped_column(String, nullable=False)
     body: Mapped[str] = mapped_column(Text, nullable=False)

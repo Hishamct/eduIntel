@@ -1,13 +1,15 @@
-import uuid
-import os
-import aiofiles
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select,func
-from sqlalchemy.orm import selectinload
-from app.student.models import HomeworkSubmission,DoubtThread,DoubtMessage
 import logging
-from fastapi import UploadFile, HTTPException
+import os
+import uuid
+
+import aiofiles
+from fastapi import HTTPException, UploadFile
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
 from app.ocr import service as ocr_service
+from app.student.models import DoubtMessage, DoubtThread, HomeworkSubmission
 from app.teacher.models import StudyMaterial
 
 logger = logging.getLogger(__name__)
@@ -119,7 +121,9 @@ async def add_doubt_message(
     return result.scalar_one()
 
 
-async def list_doubt_threads(db: AsyncSession, student_id: uuid.UUID) -> list[DoubtThread]:
+async def list_doubt_threads(
+    db: AsyncSession, student_id: uuid.UUID
+) -> list[DoubtThread]:
     result = await db.execute(
         select(DoubtThread)
         .options(selectinload(DoubtThread.messages))
@@ -128,15 +132,21 @@ async def list_doubt_threads(db: AsyncSession, student_id: uuid.UUID) -> list[Do
     )
     return result.scalars().all()
 
+
 async def get_dashboard_summary(db: AsyncSession, student_id: uuid.UUID) -> dict:
     homework_count_result = await db.execute(
-        select(func.count()).select_from(HomeworkSubmission)
-        .where(HomeworkSubmission.student_id == student_id, HomeworkSubmission.status == "submitted")
+        select(func.count())
+        .select_from(HomeworkSubmission)
+        .where(
+            HomeworkSubmission.student_id == student_id,
+            HomeworkSubmission.status == "submitted",
+        )
     )
     pending_homework = homework_count_result.scalar_one()
 
     doubts_count_result = await db.execute(
-        select(func.count()).select_from(DoubtThread)
+        select(func.count())
+        .select_from(DoubtThread)
         .where(DoubtThread.student_id == student_id, DoubtThread.status == "open")
     )
     unresolved_doubts = doubts_count_result.scalar_one()
@@ -156,17 +166,21 @@ async def get_dashboard_summary(db: AsyncSession, student_id: uuid.UUID) -> dict
 
     activity = []
     for hw in recent_homework.scalars().all():
-        activity.append({
-            "type": "homework",
-            "text": f"Submitted \"{hw.title}\" ({hw.subject})",
-            "timestamp": hw.created_at,
-        })
+        activity.append(
+            {
+                "type": "homework",
+                "text": f'Submitted "{hw.title}" ({hw.subject})',
+                "timestamp": hw.created_at,
+            }
+        )
     for doubt in recent_doubts.scalars().all():
-        activity.append({
-            "type": "doubt",
-            "text": f"Asked a doubt: \"{doubt.title}\" ({doubt.subject})",
-            "timestamp": doubt.created_at,
-        })
+        activity.append(
+            {
+                "type": "doubt",
+                "text": f'Asked a doubt: "{doubt.title}" ({doubt.subject})',
+                "timestamp": doubt.created_at,
+            }
+        )
 
     activity.sort(key=lambda x: x["timestamp"], reverse=True)
     activity = activity[:5]
@@ -177,7 +191,10 @@ async def get_dashboard_summary(db: AsyncSession, student_id: uuid.UUID) -> dict
         "recent_activity": activity,
     }
 
-async def list_study_materials_for_student(db: AsyncSession, subject: str | None = None):
+
+async def list_study_materials_for_student(
+    db: AsyncSession, subject: str | None = None
+):
     query = select(StudyMaterial).order_by(StudyMaterial.created_at.desc())
     if subject:
         query = query.where(StudyMaterial.subject == subject)

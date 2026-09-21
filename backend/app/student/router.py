@@ -1,31 +1,32 @@
-from fastapi import APIRouter, Depends, UploadFile, File, Form,HTTPException
 import uuid
-from sqlalchemy.ext.asyncio import AsyncSession
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 from sqlalchemy import select
-from typing import List
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.database import get_db
+from app.student.models import HomeworkSubmission
+from app.student.schemas import (
+    DoubtMessageCreate,
+    DoubtThreadCreate,
+    DoubtThreadRead,
+    HomeworkSubmissionRead,
+    StudyMaterialRead,
+)
+from app.student.service import (
+    add_doubt_message,
+    create_doubt_thread,
+    get_dashboard_summary,
+    list_doubt_threads,
+    list_study_materials_for_student,
+    save_homework_submission,
+)
+from app.teacher.models import StudyMaterial
+from app.teacher.schemas import AssignmentRead
+from app.teacher.service import list_assignments
 from app.users.dependencies import require_role
 from app.users.models import User
-from app.core.database import get_db
-from app.student.schemas import (
-    HomeworkSubmissionRead,
-    DoubtThreadCreate,
-    DoubtMessageCreate,
-    DoubtThreadRead,
-)
-from app.student.models import HomeworkSubmission, DoubtThread
-from app.student.service import (
-    save_homework_submission,
-    create_doubt_thread,
-    add_doubt_message,
-    list_doubt_threads,
-    get_dashboard_summary,
-)
-from app.teacher.service import list_assignments
-from app.teacher.schemas import AssignmentRead
-from app.student.schemas import StudyMaterialRead
-from app.student.service import list_study_materials_for_student
-from fastapi.responses import FileResponse
-from app.teacher.models import StudyMaterial
 
 router = APIRouter(prefix="/student", tags=["student"])
 
@@ -66,7 +67,7 @@ async def upload_homework(
     return submission
 
 
-@router.get("/homework", response_model=List[HomeworkSubmissionRead])
+@router.get("/homework", response_model=list[HomeworkSubmissionRead])
 async def list_homework(
     current_user: User = Depends(require_role("student")),
     db: AsyncSession = Depends(get_db),
@@ -78,6 +79,7 @@ async def list_homework(
     )
     submissions = result.scalars().all()
     return submissions
+
 
 @router.post("/doubts", response_model=DoubtThreadRead)
 async def post_doubt(
@@ -95,7 +97,7 @@ async def post_doubt(
     return thread
 
 
-@router.get("/doubts", response_model=List[DoubtThreadRead])
+@router.get("/doubts", response_model=list[DoubtThreadRead])
 async def get_doubts(
     current_user: User = Depends(require_role("student")),
     db: AsyncSession = Depends(get_db),
@@ -121,9 +123,7 @@ async def reply_to_doubt(
     return thread
 
 
-
-
-@router.get("/assignments", response_model=List[AssignmentRead])
+@router.get("/assignments", response_model=list[AssignmentRead])
 async def get_student_assignments(
     current_user: User = Depends(require_role("student")),
     db: AsyncSession = Depends(get_db),
@@ -136,15 +136,13 @@ async def get_student_assignments(
     return assignments
 
 
-
-@router.get("/study-materials", response_model=List[StudyMaterialRead])
+@router.get("/study-materials", response_model=list[StudyMaterialRead])
 async def get_study_materials(
     subject: str | None = None,
     current_user: User = Depends(require_role("student")),
     db: AsyncSession = Depends(get_db),
 ):
     return await list_study_materials_for_student(db=db, subject=subject)
-
 
 
 @router.get("/study-materials/{material_id}/file")

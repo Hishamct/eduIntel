@@ -1,6 +1,7 @@
-from pydantic import BaseModel, ConfigDict
 from datetime import datetime
 from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict
 
 
 class HomeworkSubmissionRead(BaseModel):
@@ -19,6 +20,7 @@ class HomeworkSubmissionRead(BaseModel):
     graded_by: UUID | None
     extracted_text: str | None
     ocr_confidence: float | None
+
 
 class DoubtThreadCreate(BaseModel):
     subject: str
@@ -49,6 +51,7 @@ class DoubtThreadRead(BaseModel):
     status: str
     created_at: datetime
     messages: list[DoubtMessageRead]
+
 
 class StudyMaterialRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
