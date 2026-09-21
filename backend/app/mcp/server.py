@@ -3,14 +3,17 @@ MCP server exposing EduIntel AI's student data and email-sending
 as standardized tools. Run standalone via stdio; the reports module
 connects to this as an MCP client.
 """
-from mcp.server.fastmcp import FastMCP
+
 import smtplib
 from email.mime.text import MIMEText
+
+from mcp.server.fastmcp import FastMCP
 from sqlalchemy import select
-from app.core.database import AsyncSessionLocal
-from app.core.config import settings
-from app.teacher.models import ExamResult
+
 from app.admin.models import Attendance
+from app.core.config import settings
+from app.core.database import AsyncSessionLocal
+from app.teacher.models import ExamResult
 
 mcp = FastMCP("eduintel-mcp")
 
@@ -19,16 +22,28 @@ mcp = FastMCP("eduintel-mcp")
 async def get_student_data(student_id: str) -> dict:
     """Get a student's recent exam results and attendance percentage for a parent progress report."""
     async with AsyncSessionLocal() as db:
-        exam_results = (await db.execute(
-            select(ExamResult)
-            .where(ExamResult.student_id == student_id)
-            .order_by(ExamResult.exam_date.desc())
-            .limit(5)
-        )).scalars().all()
+        exam_results = (
+            (
+                await db.execute(
+                    select(ExamResult)
+                    .where(ExamResult.student_id == student_id)
+                    .order_by(ExamResult.exam_date.desc())
+                    .limit(5)
+                )
+            )
+            .scalars()
+            .all()
+        )
 
-        attendance = (await db.execute(
-            select(Attendance).where(Attendance.student_id == student_id)
-        )).scalars().all()
+        attendance = (
+            (
+                await db.execute(
+                    select(Attendance).where(Attendance.student_id == student_id)
+                )
+            )
+            .scalars()
+            .all()
+        )
 
         total = len(attendance)
         present_or_late = sum(1 for a in attendance if a.status in ("present", "late"))

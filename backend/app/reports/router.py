@@ -1,15 +1,18 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
-from app.users.dependencies import require_role
+
 from app.core.database import AsyncSessionLocal
-from app.users.models import User, StudentProfile
 from app.reports.parent_report_agent import generate_and_send_report
+from app.users.dependencies import require_role
+from app.users.models import StudentProfile, User
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
 
 @router.post("/parent-report/{student_id}")
-async def trigger_parent_report(student_id: str, current_user=Depends(require_role("admin"))):
+async def trigger_parent_report(
+    student_id: str, current_user=Depends(require_role("admin"))
+):
     async with AsyncSessionLocal() as db:
         result = await db.execute(
             select(User, StudentProfile)
