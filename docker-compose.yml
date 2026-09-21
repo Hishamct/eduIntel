@@ -4,7 +4,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: eduintel
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_PASSWORD: eduintel_dev
       POSTGRES_DB: eduintel
     volumes:
       - pgdata:/var/lib/postgresql/data
