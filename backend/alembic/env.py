@@ -15,7 +15,7 @@ from app.auth import models as auth_models    # noqa: F401
 from app.student import models as student_models
 from app.teacher import models as teacher_models  # noqa: F401
 from app.admin import models as admin_models  # noqa: F401
-
+from app.observability.models import AuditLog
 from app.announcements.models import Announcement 
 target_metadata = Base.metadata
 # this is the Alembic Config object, which provides
