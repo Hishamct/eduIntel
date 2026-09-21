@@ -1,3 +1,5 @@
+import os
+
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
@@ -7,6 +9,7 @@ from app.guardrails.pii_redaction import redact_pii, summarize_findings
 SERVER_PARAMS = StdioServerParameters(
     command="python",
     args=["-m", "app.mcp.server"],
+    env=os.environ.copy(),
 )
 
 REPORT_PROMPT = """Write a warm, concise progress report email (3-4 short paragraphs) for a parent,
