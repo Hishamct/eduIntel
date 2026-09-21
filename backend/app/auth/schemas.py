@@ -1,6 +1,7 @@
-from pydantic import BaseModel, EmailStr, Field
-from typing import Literal
 import uuid
+from typing import Literal
+
+from pydantic import BaseModel, EmailStr, Field
 
 
 class SignupRequest(BaseModel):
@@ -26,7 +27,7 @@ class UserResponse(BaseModel):
     is_active: bool
 
     class Config:
-        from_attributes = True  
+        from_attributes = True
 
 
 class PasswordResetRequest(BaseModel):

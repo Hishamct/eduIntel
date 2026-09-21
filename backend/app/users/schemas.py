@@ -1,28 +1,28 @@
-from pydantic import BaseModel, EmailStr
-from typing import Optional
 import uuid
+
+from pydantic import BaseModel, EmailStr
 
 
 class StudentProfileResponse(BaseModel):
-    grade: Optional[str] = None
-    section: Optional[str] = None
-    roll_number: Optional[str] = None
-    parent_email: Optional[str] = None
+    grade: str | None = None
+    section: str | None = None
+    roll_number: str | None = None
+    parent_email: str | None = None
 
     class Config:
         from_attributes = True
 
 
 class TeacherProfileResponse(BaseModel):
-    subjects: Optional[str] = None
-    department: Optional[str] = None
+    subjects: str | None = None
+    department: str | None = None
 
     class Config:
         from_attributes = True
 
 
 class AdminProfileResponse(BaseModel):
-    designation: Optional[str] = None
+    designation: str | None = None
 
     class Config:
         from_attributes = True
@@ -33,25 +33,25 @@ class MeResponse(BaseModel):
     email: EmailStr
     role: str
     is_active: bool
-    student_profile: Optional[StudentProfileResponse] = None
-    teacher_profile: Optional[TeacherProfileResponse] = None
-    admin_profile: Optional[AdminProfileResponse] = None
+    student_profile: StudentProfileResponse | None = None
+    teacher_profile: TeacherProfileResponse | None = None
+    admin_profile: AdminProfileResponse | None = None
 
     class Config:
         from_attributes = True
 
 
 class StudentProfileUpdate(BaseModel):
-    grade: Optional[str] = None
-    section: Optional[str] = None
-    roll_number: Optional[str] = None
-    parent_email: Optional[str] = None
+    grade: str | None = None
+    section: str | None = None
+    roll_number: str | None = None
+    parent_email: str | None = None
 
 
 class TeacherProfileUpdate(BaseModel):
-    subjects: Optional[str] = None
-    department: Optional[str] = None
+    subjects: str | None = None
+    department: str | None = None
 
 
 class AdminProfileUpdate(BaseModel):
-    designation: Optional[str] = None
+    designation: str | None = None

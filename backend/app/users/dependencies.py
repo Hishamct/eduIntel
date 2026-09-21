@@ -1,11 +1,12 @@
-from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 import uuid
 
-from app.core.database import get_db
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.auth.security import decode_access_token
+from app.core.database import get_db
 from app.users.models import User
 
 bearer_scheme = HTTPBearer()
@@ -48,4 +49,5 @@ def require_role(*allowed_roles: str):
                 detail=f"This action requires one of these roles: {', '.join(allowed_roles)}",
             )
         return current_user
+
     return role_checker

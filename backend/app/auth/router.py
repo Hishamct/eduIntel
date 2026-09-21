@@ -1,20 +1,23 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.core.database import get_db
+
+from app.auth import service
 from app.auth.schemas import (
-    SignupRequest,
     LoginRequest,
+    PasswordResetConfirm,
+    PasswordResetRequest,
+    SignupRequest,
     TokenResponse,
     UserResponse,
-    PasswordResetRequest,
-    PasswordResetConfirm,
 )
-from app.auth import service
+from app.core.database import get_db
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-@router.post("/signup", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/signup", response_model=UserResponse, status_code=status.HTTP_201_CREATED
+)
 async def signup(data: SignupRequest, db: AsyncSession = Depends(get_db)):
     try:
         user = await service.signup_user(db, data)
@@ -33,10 +36,14 @@ async def login(data: LoginRequest, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/password-reset/request")
-async def password_reset_request(data: PasswordResetRequest, db: AsyncSession = Depends(get_db)):
+async def password_reset_request(
+    data: PasswordResetRequest, db: AsyncSession = Depends(get_db)
+):
     token = await service.request_password_reset(db, data.email)
     # Always return the same generic message, whether or not the email exists
-    response = {"message": "If that email is registered, a reset link has been generated."}
+    response = {
+        "message": "If that email is registered, a reset link has been generated."
+    }
     if token:
         # DEV ONLY: return the raw token directly since email-sending (mcp module) isn't built until Week 4
         response["dev_reset_token"] = token
@@ -44,7 +51,9 @@ async def password_reset_request(data: PasswordResetRequest, db: AsyncSession = 
 
 
 @router.post("/password-reset/confirm")
-async def password_reset_confirm(data: PasswordResetConfirm, db: AsyncSession = Depends(get_db)):
+async def password_reset_confirm(
+    data: PasswordResetConfirm, db: AsyncSession = Depends(get_db)
+):
     try:
         await service.confirm_password_reset(db, data.token, data.new_password)
         return {"message": "Password has been reset successfully."}

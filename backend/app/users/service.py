@@ -1,7 +1,8 @@
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from sqlalchemy import select
-from app.users.models import User, StudentProfile, TeacherProfile, AdminProfile
+
+from app.users.models import AdminProfile, StudentProfile, TeacherProfile, User
 
 
 async def get_user_with_profile(db: AsyncSession, user_id) -> User:
@@ -18,7 +19,7 @@ async def get_user_with_profile(db: AsyncSession, user_id) -> User:
 
 
 async def update_profile(db: AsyncSession, user: User, data: dict) -> User:
-   
+
     user = await get_user_with_profile(db, user.id)
 
     profile_map = {
