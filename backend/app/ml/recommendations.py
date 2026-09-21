@@ -12,6 +12,7 @@ across the whole collection, not a subject-filtered query) — but normalization
 is still applied to the query text itself, so search terms match canonical
 subject naming as closely as possible.
 """
+
 from app.rag.service import retrieve_and_generate
 
 SUBJECT_ALIASES = {
@@ -30,7 +31,9 @@ def normalize_subject_for_query(raw_subject: str) -> str:
     return SUBJECT_ALIASES.get(key, raw_subject.strip().title())
 
 
-def get_recommendations_for_weak_topics(top_weak_topics: list[dict], n_results_per_topic: int = 3) -> list[dict]:
+def get_recommendations_for_weak_topics(
+    top_weak_topics: list[dict], n_results_per_topic: int = 3
+) -> list[dict]:
     recommendations = []
 
     for weak_topic in top_weak_topics:
@@ -46,14 +49,16 @@ def get_recommendations_for_weak_topics(top_weak_topics: list[dict], n_results_p
             n_results=n_results_per_topic,
         )
 
-        recommendations.append({
-            "subject": subject,
-            "topic": topic,
-            "recommendation": result["answer"],
-            "sources": [
-                {"title": s["title"], "subject": s["subject"]}
-                for s in result["sources"]
-            ],
-        })
+        recommendations.append(
+            {
+                "subject": subject,
+                "topic": topic,
+                "recommendation": result["answer"],
+                "sources": [
+                    {"title": s["title"], "subject": s["subject"]}
+                    for s in result["sources"]
+                ],
+            }
+        )
 
     return recommendations

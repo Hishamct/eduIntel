@@ -12,14 +12,17 @@ the learned pattern to each student's current standing. This is the normal/
 expected way trained models are used in production, but worth being explicit
 about for a reviewer.
 """
+
 import uuid
-import numpy as np
-import joblib
 from functools import lru_cache
+
+import joblib
+import numpy as np
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.admin.models import Attendance
-from app.student.models import HomeworkSubmission, DoubtThread
+from app.student.models import DoubtThread, HomeworkSubmission
 from app.teacher.models import ExamResult
 
 AT_RISK_MODEL_PATH = "app/ml/models/at_risk_model.joblib"
@@ -74,7 +77,9 @@ def _compute_at_risk_features(attendance, homework, exams, doubts) -> dict:
     """Shared feature-computation used by both get_at_risk_prediction (below)
     and app/ml/explain.py's SHAP explanation, so predictions and their
     explanations can never silently drift out of sync."""
-    attendance_rate = sum(1 for a in attendance if a.status in ("present", "late")) / len(attendance)
+    attendance_rate = sum(
+        1 for a in attendance if a.status in ("present", "late")
+    ) / len(attendance)
 
     months = _months_of_history(attendance)
     expected_hw = months * EXPECTED_HW_PER_MONTH
@@ -82,8 +87,12 @@ def _compute_at_risk_features(attendance, homework, exams, doubts) -> dict:
 
     exams_sorted = sorted(exams, key=lambda e: e.exam_date)
     if len(exams_sorted) >= 2:
-        avg_score_early = np.mean([float(e.score) for e in exams_sorted[:len(exams_sorted)//2]])
-        avg_score_late = np.mean([float(e.score) for e in exams_sorted[len(exams_sorted)//2:]])
+        avg_score_early = np.mean(
+            [float(e.score) for e in exams_sorted[: len(exams_sorted) // 2]]
+        )
+        avg_score_late = np.mean(
+            [float(e.score) for e in exams_sorted[len(exams_sorted) // 2 :]]
+        )
     else:
         avg_score_early = avg_score_late = float(exams_sorted[0].score)
     score_trend = avg_score_late - avg_score_early
@@ -129,13 +138,17 @@ async def get_at_risk_prediction(db: AsyncSession, student_id: uuid.UUID) -> dic
     }
 
 
-async def get_weak_topic_predictions(db: AsyncSession, student_id: uuid.UUID) -> list[dict]:
+async def get_weak_topic_predictions(
+    db: AsyncSession, student_id: uuid.UUID
+) -> list[dict]:
     attendance, homework, exams, _ = await _get_student_history(db, student_id)
 
     if not attendance or not exams:
         return []
 
-    attendance_rate = sum(1 for a in attendance if a.status in ("present", "late")) / len(attendance)
+    attendance_rate = sum(
+        1 for a in attendance if a.status in ("present", "late")
+    ) / len(attendance)
     months = _months_of_history(attendance)
     expected_hw = months * EXPECTED_HW_PER_MONTH
     homework_rate = min(len(homework) / expected_hw, 1.0) if expected_hw > 0 else 0
@@ -160,8 +173,10 @@ async def get_weak_topic_predictions(db: AsyncSession, student_id: uuid.UUID) ->
         topic_avg_score = np.mean([float(e.score) for e in topic_exams])
 
         other_scores = [
-            float(e.score) for (s, t), exs in by_topic.items()
-            if (s, t) != (subject, topic) for e in exs
+            float(e.score)
+            for (s, t), exs in by_topic.items()
+            if (s, t) != (subject, topic)
+            for e in exs
         ]
         student_overall_avg = np.mean(other_scores) if other_scores else topic_avg_score
         relative_gap = topic_avg_score - student_overall_avg
@@ -181,12 +196,14 @@ async def get_weak_topic_predictions(db: AsyncSession, student_id: uuid.UUID) ->
         X = [[row.get(col, 0) for col in feature_cols]]
         probability = float(model.predict_proba(X)[0][1])
 
-        predictions.append({
-            "subject": subject,
-            "topic": topic,
-            "is_weak": probability >= 0.5,
-            "weak_probability": round(probability, 3),
-        })
+        predictions.append(
+            {
+                "subject": subject,
+                "topic": topic,
+                "is_weak": probability >= 0.5,
+                "weak_probability": round(probability, 3),
+            }
+        )
 
     # most concerning first
     predictions.sort(key=lambda p: -p["weak_probability"])

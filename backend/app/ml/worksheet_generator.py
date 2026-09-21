@@ -3,13 +3,16 @@ Generates a targeted practice worksheet (PDF) for a specific weak topic.
 Gemini produces structured practice questions + answer key as JSON, which
 is then rendered into a formatted PDF via reportlab.
 """
-import json
+
 import io
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.units import cm
+import json
+
 from reportlab.lib import colors
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.units import cm
+from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer
+
 from app.rag.client import _genai_client
 
 # Matches EduIntel design tokens
@@ -19,8 +22,11 @@ ACCENT_COLOR = colors.HexColor("#C97A2B")
 N_QUESTIONS = 8
 
 
-def _generate_with_retry(prompt: str, model: str = "gemini-3.6-flash", max_retries: int = 3):
+def _generate_with_retry(
+    prompt: str, model: str = "gemini-3.6-flash", max_retries: int = 3
+):
     import time
+
     last_error = None
     for attempt in range(max_retries):
         try:
@@ -29,14 +35,20 @@ def _generate_with_retry(prompt: str, model: str = "gemini-3.6-flash", max_retri
             last_error = e
             error_str = str(e)
             if "503" in error_str or "UNAVAILABLE" in error_str or "429" in error_str:
-                time.sleep((2 ** attempt) * 1.5)
+                time.sleep((2**attempt) * 1.5)
                 continue
             raise
     raise last_error
 
 
-def _generate_questions(subject: str, topic: str, student_context: str | None = None) -> list[dict]:
-    context_note = f"\n\nContext: this worksheet is targeted at a student who is currently struggling specifically with {topic}, so questions should build from fundamentals rather than assume mastery." if student_context else ""
+def _generate_questions(
+    subject: str, topic: str, student_context: str | None = None
+) -> list[dict]:
+    context_note = (
+        f"\n\nContext: this worksheet is targeted at a student who is currently struggling specifically with {topic}, so questions should build from fundamentals rather than assume mastery."
+        if student_context
+        else ""
+    )
 
     prompt = f"""Generate exactly {N_QUESTIONS} practice questions for a student studying {topic} under {subject}, at a level appropriate for secondary/high school coaching institute students.{context_note}
 
@@ -56,49 +68,73 @@ Example format:
     # Strip markdown code fences if the model added them despite instructions
     if raw_text.startswith("```"):
         raw_text = raw_text.split("```")[1]
-        if raw_text.startswith("json"):
-            raw_text = raw_text[4:]
+        raw_text = raw_text.removeprefix("json")
         raw_text = raw_text.strip()
 
     try:
         questions = json.loads(raw_text)
     except json.JSONDecodeError:
-        raise ValueError(f"Model did not return valid JSON for {subject}/{topic}. Raw response: {raw_text[:300]}")
+        raise ValueError(
+            f"Model did not return valid JSON for {subject}/{topic}. Raw response: {raw_text[:300]}"
+        )
 
     return questions
 
 
-def generate_worksheet_pdf(subject: str, topic: str, student_name: str | None = None) -> bytes:
+def generate_worksheet_pdf(
+    subject: str, topic: str, student_name: str | None = None
+) -> bytes:
     """Returns the generated worksheet as raw PDF bytes."""
     questions = _generate_questions(subject, topic)
 
     buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=2*cm, bottomMargin=2*cm)
+    doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=2 * cm, bottomMargin=2 * cm)
     styles = getSampleStyleSheet()
 
     title_style = ParagraphStyle(
-        "WorksheetTitle", parent=styles["Heading1"],
-        textColor=PRIMARY_COLOR, fontSize=20, spaceAfter=4,
+        "WorksheetTitle",
+        parent=styles["Heading1"],
+        textColor=PRIMARY_COLOR,
+        fontSize=20,
+        spaceAfter=4,
     )
     subtitle_style = ParagraphStyle(
-        "WorksheetSubtitle", parent=styles["Normal"],
-        textColor=colors.HexColor("#5F6774"), fontSize=11, spaceAfter=20,
+        "WorksheetSubtitle",
+        parent=styles["Normal"],
+        textColor=colors.HexColor("#5F6774"),
+        fontSize=11,
+        spaceAfter=20,
     )
     question_style = ParagraphStyle(
-        "Question", parent=styles["Normal"],
-        fontSize=12, spaceAfter=6, spaceBefore=14, leading=16,
+        "Question",
+        parent=styles["Normal"],
+        fontSize=12,
+        spaceAfter=6,
+        spaceBefore=14,
+        leading=16,
     )
     difficulty_style = ParagraphStyle(
-        "Difficulty", parent=styles["Normal"],
-        fontSize=9, textColor=ACCENT_COLOR, spaceAfter=2,
+        "Difficulty",
+        parent=styles["Normal"],
+        fontSize=9,
+        textColor=ACCENT_COLOR,
+        spaceAfter=2,
     )
     answer_style = ParagraphStyle(
-        "Answer", parent=styles["Normal"],
-        fontSize=11, leading=15, spaceAfter=10, textColor=colors.HexColor("#1B2330"),
+        "Answer",
+        parent=styles["Normal"],
+        fontSize=11,
+        leading=15,
+        spaceAfter=10,
+        textColor=colors.HexColor("#1B2330"),
     )
     section_header_style = ParagraphStyle(
-        "SectionHeader", parent=styles["Heading2"],
-        textColor=PRIMARY_COLOR, fontSize=16, spaceBefore=10, spaceAfter=14,
+        "SectionHeader",
+        parent=styles["Heading2"],
+        textColor=PRIMARY_COLOR,
+        fontSize=16,
+        spaceBefore=10,
+        spaceAfter=14,
     )
 
     elements = []
@@ -109,11 +145,13 @@ def generate_worksheet_pdf(subject: str, topic: str, student_name: str | None = 
         subtitle += f" &nbsp;&nbsp;|&nbsp;&nbsp; Prepared for: {student_name}"
     elements.append(Paragraph(subtitle, subtitle_style))
 
-    elements.append(Paragraph(
-        "Generated by EduIntel AI based on identified areas for improvement. "
-        "Work through each question before checking the answer key at the end.",
-        styles["Italic"]
-    ))
+    elements.append(
+        Paragraph(
+            "Generated by EduIntel AI based on identified areas for improvement. "
+            "Work through each question before checking the answer key at the end.",
+            styles["Italic"],
+        )
+    )
     elements.append(Spacer(1, 12))
 
     for i, q in enumerate(questions, start=1):
