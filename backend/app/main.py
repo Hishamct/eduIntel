@@ -18,7 +18,7 @@ app = FastAPI(title="EduIntel AI")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=["http://localhost:5173", "http://13.205.55.115", "https://eduintelai.in", "https://www.eduintelai.in"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
