@@ -1,17 +1,29 @@
-from langgraph.graph import StateGraph, END
-from typing import TypedDict
+import uuid
 from datetime import date
+from typing import TypedDict
+
 from google.genai import types
-from app.core.llm_client import generate_text, decide_tools
-from app.core.database import AsyncSessionLocal  # adjust if named differently
+from langgraph.graph import END, StateGraph
+
 from app.admin.service import (
-    get_student_teacher_counts,
-    get_salary_summary,
-    get_timetable_coverage,
-    get_teacher_grading_performance,
-    get_revenue_summary,
     get_attendance_stats,
+    get_revenue_summary,
+    get_salary_summary,
+    get_student_teacher_counts,
+    get_teacher_grading_performance,
+    get_timetable_coverage,
 )
+from app.core.database import AsyncSessionLocal  # adjust if named differently
+from app.core.llm_client import (
+    LLMCallUsage,
+    decide_tools_with_usage,
+    generate_text_with_usage,
+)
+from app.guardrails.prompt_injection import (
+    INJECTION_REFUSAL_MESSAGE,
+    check_for_prompt_injection,
+)
+from app.observability.tracing import traced_node
 
 SYSTEM_SCOPE = """You are the EduIntel AI Admin Assistant. You help the institute owner/admin understand what's happening on the platform — student and teacher counts, salary/payroll status, timetable coverage, teacher grading performance, revenue/fee collection, and attendance — without them needing to dig through dashboards themselves.
 
@@ -33,7 +45,10 @@ TOOL_DECLARATIONS = [
         parameters={
             "type": "object",
             "properties": {
-                "month": {"type": "string", "description": "Optional month in YYYY-MM format, e.g. '2026-08'. Omit for all-time summary."},
+                "month": {
+                    "type": "string",
+                    "description": "Optional month in YYYY-MM format, e.g. '2026-08'. Omit for all-time summary.",
+                },
             },
             "required": [],
         },
@@ -44,7 +59,10 @@ TOOL_DECLARATIONS = [
         parameters={
             "type": "object",
             "properties": {
-                "class_section": {"type": "string", "description": "Optional class section filter, e.g. '10-A'."},
+                "class_section": {
+                    "type": "string",
+                    "description": "Optional class section filter, e.g. '10-A'.",
+                },
             },
             "required": [],
         },
@@ -60,7 +78,10 @@ TOOL_DECLARATIONS = [
         parameters={
             "type": "object",
             "properties": {
-                "month": {"type": "string", "description": "Optional month in YYYY-MM format, e.g. '2026-08'. Omit for all-time summary."},
+                "month": {
+                    "type": "string",
+                    "description": "Optional month in YYYY-MM format, e.g. '2026-08'. Omit for all-time summary.",
+                },
             },
             "required": [],
         },
@@ -71,7 +92,10 @@ TOOL_DECLARATIONS = [
         parameters={
             "type": "object",
             "properties": {
-                "class_section": {"type": "string", "description": "Optional class section filter, e.g. '10-A'."},
+                "class_section": {
+                    "type": "string",
+                    "description": "Optional class section filter, e.g. '10-A'.",
+                },
             },
             "required": [],
         },
@@ -93,7 +117,7 @@ TOOL_FUNCTIONS = {
 
 def _parse_month_arg(args: dict) -> dict:
     """Converts a 'YYYY-MM' string arg into a date object the service functions expect."""
-    if "month" in args and args["month"]:
+    if args.get("month"):
         year, month = args["month"].split("-")
         args = {**args, "month": date(int(year), int(month), 1)}
     return args
@@ -102,11 +126,15 @@ def _parse_month_arg(args: dict) -> dict:
 class AgentState(TypedDict):
     query: str
     history: list[dict]
-    tool_calls: list[dict]      # [{"name": str, "args": dict}]
-    tool_results: list[dict]    # [{"name": str, "result": dict}]
+    tool_calls: list[dict]  # [{"name": str, "args": dict}]
+    tool_results: list[dict]  # [{"name": str, "result": dict}]
     answer: str
+    decide_tools_usage: LLMCallUsage | None
+    generate_usage: LLMCallUsage | None
+    trace_steps: list[dict]
 
 
+@traced_node("decide_tools")
 def decide_tools_node(state: AgentState) -> AgentState:
     history_text = ""
     for turn in state["history"][-6:]:
@@ -118,14 +146,15 @@ def decide_tools_node(state: AgentState) -> AgentState:
 Conversation so far:
 {history_text}
 
-Admin's new message: {state['query']}
+Admin's new message: {state["query"]}
 
 Decide which tool(s), if any, you need to call to answer this. Call as many as are relevant."""
 
-    tool_calls = decide_tools(prompt, ADMIN_TOOL)
-    return {**state, "tool_calls": tool_calls}
+    tool_calls, usage = decide_tools_with_usage(prompt, ADMIN_TOOL)
+    return {**state, "tool_calls": tool_calls, "decide_tools_usage": usage}
 
 
+@traced_node("execute_tools")
 async def execute_tools_node(state: AgentState) -> AgentState:
     tool_results = []
 
@@ -147,6 +176,7 @@ async def execute_tools_node(state: AgentState) -> AgentState:
     return {**state, "tool_results": tool_results}
 
 
+@traced_node("generate")
 def generate_node(state: AgentState) -> AgentState:
     history_text = ""
     for turn in state["history"][-6:]:
@@ -165,15 +195,15 @@ def generate_node(state: AgentState) -> AgentState:
 Conversation so far:
 {history_text}
 
-Admin's new message: {state['query']}
+Admin's new message: {state["query"]}
 
 Data retrieved from tools:
 {results_text}
 
 Respond clearly and concisely, summarizing the relevant numbers in plain language. Don't just dump raw JSON — explain what it means. If no tools were relevant, respond according to the scope rules above."""
 
-    answer = generate_text(prompt)
-    return {**state, "answer": answer}
+    answer, usage = generate_text_with_usage(prompt)
+    return {**state, "answer": answer, "generate_usage": usage}
 
 
 graph = StateGraph(AgentState)
@@ -191,18 +221,77 @@ _admin_conversation_sessions: dict[str, list[dict]] = {}
 
 
 async def chat_with_admin_assistant(session_id: str, query: str) -> dict:
-    history = _admin_conversation_sessions.get(session_id, [])
+    # Guardrail: check for prompt-injection attempts BEFORE this text ever
+    # reaches the tool-decision prompt or the generation prompt. This
+    # matters especially here because a successful injection against the
+    # Admin Assistant could try to manipulate which tools get called or
+    # how real institute data (revenue, salaries) gets summarized —
+    # higher stakes than the student-facing Portal Assistant.
+    is_flagged, matched_pattern = check_for_prompt_injection(query)
+    if is_flagged:
+        print(
+            f"[guardrail] Blocked prompt-injection attempt in admin assistant "
+            f"(session={session_id}, pattern={matched_pattern!r})"
+        )
+        return {
+            "answer": INJECTION_REFUSAL_MESSAGE,
+            "tools_used": [],
+            "blocked": True,
+            "block_reason": matched_pattern,
+            "llm_usage": {},
+            # Blocked turns never reach the graph, so there's no node
+            # timing to report — still tagged with a trace_id and a single
+            # "blocked" step rather than an empty trace, so a blocked
+            # request is visible in the agent-traces view too, not just
+            # silently absent from it.
+            "trace_id": str(uuid.uuid4()),
+            "trace_steps": [
+                {
+                    "node_name": "guardrail_check",
+                    "step_order": 0,
+                    "duration_ms": 0,
+                    "status": "blocked",
+                    "error_message": matched_pattern,
+                }
+            ],
+        }
 
-    result = await admin_assistant_graph.ainvoke({
-        "query": query,
-        "history": history,
-        "tool_calls": [],
-        "tool_results": [],
-        "answer": "",
-    })
+    history = _admin_conversation_sessions.get(session_id, [])
+    trace_id = str(uuid.uuid4())
+
+    result = await admin_assistant_graph.ainvoke(
+        {
+            "query": query,
+            "history": history,
+            "tool_calls": [],
+            "tool_results": [],
+            "answer": "",
+            "decide_tools_usage": None,
+            "generate_usage": None,
+            "trace_steps": [],
+        }
+    )
 
     history.append({"role": "user", "content": query})
     history.append({"role": "assistant", "content": result["answer"]})
     _admin_conversation_sessions[session_id] = history
 
-    return {"answer": result["answer"], "tools_used": [tc["name"] for tc in result["tool_calls"]]}
+    return {
+        "answer": result["answer"],
+        "tools_used": [tc["name"] for tc in result["tool_calls"]],
+        "blocked": False,
+        "block_reason": None,
+        # Two LLM calls happen per admin turn (decide_tools, then generate)
+        # — both are returned here (rather than logged inside this function,
+        # which has no db session) so the router can log each with its own
+        # endpoint tag. See app/observability/service.py: log_llm_usage.
+        "llm_usage": {
+            "admin-assistant/decide_tools": result["decide_tools_usage"],
+            "admin-assistant/generate": result["generate_usage"],
+        },
+        # Per-node step timings for this turn, same "compute here, log via
+        # db in the router" pattern as llm_usage above. See
+        # app/observability/service.py: log_agent_trace.
+        "trace_id": trace_id,
+        "trace_steps": result["trace_steps"],
+    }
