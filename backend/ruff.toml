@@ -1,0 +1,44 @@
+# Standalone ruff config so it doesn't collide with anything already in
+# your pyproject.toml (if you have one). Place at backend/ruff.toml.
+#
+# This is a lightweight, pragmatic ruleset — not maximally strict. Given
+# where you are in the timeline (final testing/docs phase), the goal is
+# catching real bugs and dead code cheaply, not a full style rewrite.
+
+line-length = 120
+target-version = "py312"
+
+[lint]
+# E/F = pyflakes + pycodestyle core (unused imports, undefined names, etc.)
+# I   = import sorting
+# UP  = pyupgrade (modern syntax suggestions)
+# B   = flake8-bugbear (common real-bug patterns, e.g. mutable default args)
+select = ["E", "F", "I", "UP", "B"]
+
+# Don't fail on line-length in migration files/generated code — these are
+# often long by nature (op.create_table with many columns).
+[lint.per-file-ignores]
+"alembic/versions/*" = ["E501"]
+
+# B008 flags any function call used as a parameter default, because that's
+# usually a real bug (e.g. a mutable default). FastAPI's entire dependency
+# injection system is BUILT on this exact pattern (Depends(...), Query(...),
+# File(...), etc. as defaults), so without this allowlist ruff flags every
+# single route handler in a FastAPI app — 167 of your 169 remaining errors
+# were this, verified by reproducing it locally before handing this back.
+#
+# The FastAPI builtins (Depends/Query/File/Form/...) cover most of it, but
+# Depends(require_role("admin")) also needs require_role itself allowlisted
+# — ruff flags the INNER call too, since it can't know your own factory
+# function is safe. Use the fully-qualified import path, exactly as it
+# resolves from wherever require_role is actually defined (adjust if your
+# import path differs from app.users.dependencies).
+[lint.flake8-bugbear]
+extend-immutable-calls = [
+    "fastapi.Depends", "fastapi.Query", "fastapi.File", "fastapi.Form",
+    "fastapi.Path", "fastapi.Header", "fastapi.Cookie", "fastapi.Body", "fastapi.Security",
+    "app.users.dependencies.require_role",
+]
+
+[format]
+quote-style = "double"

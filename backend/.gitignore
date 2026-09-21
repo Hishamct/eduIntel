@@ -7,3 +7,5 @@ alembic/versions/*.pyc
 chroma_data/
 uploads/
 app/ml/models/
+mlflow.db
+mlruns/
