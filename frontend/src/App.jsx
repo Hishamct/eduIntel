@@ -22,7 +22,8 @@ import ProtectedRoute from "./components/ProtectedRoute";
 import TimetableView from "./pages/admin/TimetableView";
 import SalaryManagement from "./pages/admin/SalaryManagement";
 import AdminAssistant from "./pages/admin/AdminAssistant";
-
+import LlmUsage from "./pages/admin/LlmUsage";
+import AgentTraces from "./pages/admin/AgentTraces";
 
 
 function App() {
@@ -136,6 +137,22 @@ function App() {
            element={
             <ProtectedRoute>
               <AdminAssistant />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/llm-usage"
+          element={
+            <ProtectedRoute>
+              <LlmUsage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/agent-traces"
+          element={
+            <ProtectedRoute>
+              <AgentTraces />
             </ProtectedRoute>
           }
         />

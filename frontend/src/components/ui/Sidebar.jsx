@@ -19,6 +19,8 @@ export const PORTAL_NAV_ITEMS = {
   admin: [
     { id: 'dashboard', label: 'Dashboard', icon: 'dashboard' },
     { id: 'ai-assistant', label: 'AI Assistant', icon: 'smart_toy' },
+    { id: 'llm-usage', label: 'LLM Usage', icon: 'receipt_long' },       
+    { id: 'agent-traces', label: 'Agent Traces', icon: 'route' },       
     { id: 'students', label: 'Student Records', icon: 'group' },
     { id: 'analysis', label: 'Academic Analysis', icon: 'analytics' },
     { id: 'alerts', label: 'Risk Alerts', icon: 'warning' },
