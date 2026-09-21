@@ -5,10 +5,12 @@ class CollectionStatus(BaseModel):
     name: str
     document_count: int
 
+
 class DebugQueryResult(BaseModel):
     chunk_text: str
     distance: float
     metadata: dict
+
 
 class RagQueryRequest(BaseModel):
     query: str

@@ -1,6 +1,7 @@
 import chromadb
 from chromadb import Documents, EmbeddingFunction, Embeddings
 from google import genai
+
 from app.core.config import settings
 
 CHROMA_PERSIST_DIR = "chroma_data"
@@ -38,6 +39,7 @@ def get_study_materials_collection():
         name="study_materials",
         embedding_function=_embedding_fn,
     )
+
 
 def get_collection_by_name(name: str):
     if name == "portal_help_docs":

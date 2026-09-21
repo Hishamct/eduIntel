@@ -75,12 +75,17 @@ def seed_portal_help_docs():
     collection = get_portal_help_collection()
 
     ids = [article["id"] for article in PORTAL_HELP_ARTICLES]
-    documents = [f"{article['title']}\n\n{article['content']}" for article in PORTAL_HELP_ARTICLES]
+    documents = [
+        f"{article['title']}\n\n{article['content']}"
+        for article in PORTAL_HELP_ARTICLES
+    ]
     metadatas = [{"title": article["title"]} for article in PORTAL_HELP_ARTICLES]
 
     collection.upsert(documents=documents, ids=ids, metadatas=metadatas)
 
-    print(f"Seeded {len(PORTAL_HELP_ARTICLES)} portal help articles into portal_help_docs.")
+    print(
+        f"Seeded {len(PORTAL_HELP_ARTICLES)} portal help articles into portal_help_docs."
+    )
 
 
 if __name__ == "__main__":

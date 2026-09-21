@@ -33,6 +33,7 @@ Requires (add to requirements.txt if missing):
     mlflow
     pandas
 """
+
 import json
 import sys
 import time
@@ -57,21 +58,12 @@ if "langchain_community.chat_models.vertexai" not in sys.modules:
     sys.modules["langchain_community.chat_models.vertexai"] = _fake_vertexai_module
 
 import mlflow
-import pandas as pd
 from google.genai.errors import APIError
 from groq import APIStatusError as GroqAPIStatusError
 from langchain_groq import ChatGroq
-from ragas import evaluate, EvaluationDataset, RunConfig
+from ragas import EvaluationDataset, RunConfig, evaluate
 from ragas.llms import LangchainLLMWrapper
 from ragas.metrics import Faithfulness, LLMContextPrecisionWithoutReference
-
-from app.core.config import settings
-
-# --- ADJUST THIS IMPORT to wherever retrieve_and_generate actually lives ---
-# Based on what you showed me, it's the function with signature
-# retrieve_and_generate(query, collection_name="study_materials", n_results=3)
-# living alongside ingest_study_material() / debug_query_study_materials().
-from app.rag.service import retrieve_and_generate  # noqa: E402
 
 # generate_text()'s Groq fallback model (openai/gpt-oss-120b) has been
 # pinned near its 200k-token/day cap all evening and isn't clearing fast
@@ -79,18 +71,30 @@ from app.rag.service import retrieve_and_generate  # noqa: E402
 # out the full rolling-window recovery, point it at a different Groq
 # model for the duration of THIS SCRIPT ONLY — llm_client.py itself is
 # untouched, so the app's actual production fallback choice is unaffected.
-import app.core.llm_client as _llm_client  # noqa: E402
+import app.core.llm_client as _llm_client
+from app.core.config import settings
+
+# --- ADJUST THIS IMPORT to wherever retrieve_and_generate actually lives ---
+# Based on what you showed me, it's the function with signature
+# retrieve_and_generate(query, collection_name="study_materials", n_results=3)
+# living alongside ingest_study_material() / debug_query_study_materials().
+from app.rag.service import retrieve_and_generate
+
 if hasattr(_llm_client, "GROQ_FALLBACK_MODEL"):
-    print(f"[eval] Overriding Groq fallback model for this run: "
-          f"{_llm_client.GROQ_FALLBACK_MODEL} -> openai/gpt-oss-20b")
+    print(
+        f"[eval] Overriding Groq fallback model for this run: "
+        f"{_llm_client.GROQ_FALLBACK_MODEL} -> openai/gpt-oss-20b"
+    )
     _llm_client.GROQ_FALLBACK_MODEL = "openai/gpt-oss-20b"
     # (Deliberately NOT llama-3.1-8b-instant here — that's what the RAGAS
     # judge below uses, and we want generation and judging on separate
     # models so they don't compete for the same daily quota again.)
 else:
-    print("[eval] WARNING: couldn't find GROQ_FALLBACK_MODEL on llm_client — "
-          "check the actual constant name in app/core/llm_client.py and "
-          "update this override to match.")
+    print(
+        "[eval] WARNING: couldn't find GROQ_FALLBACK_MODEL on llm_client — "
+        "check the actual constant name in app/core/llm_client.py and "
+        "update this override to match."
+    )
 
 EVAL_SET_PATH = Path(__file__).parent / "eval_set.json"
 RESULTS_PATH = Path(__file__).parent / "eval_results.csv"
@@ -111,12 +115,19 @@ def load_eval_set() -> list[dict]:
 # between calls keeps us under that; if we still get rate-limited
 # (shared quota, clock drift, etc.) we back off and retry rather than
 # crashing the whole 28-question run.
-SECONDS_BETWEEN_CALLS = 3  # Groq's free tier allows 30 req/min, far looser than Gemini's daily cap
+SECONDS_BETWEEN_CALLS = (
+    3  # Groq's free tier allows 30 req/min, far looser than Gemini's daily cap
+)
 MAX_RETRIES_ON_RATE_LIMIT = 3
 RATE_LIMIT_BACKOFF_SECONDS = 60
 
 
-TRANSIENT_STATUS_CODES = {429, 500, 503, 504}  # rate limit + Gemini server overload/timeout
+TRANSIENT_STATUS_CODES = {
+    429,
+    500,
+    503,
+    504,
+}  # rate limit + Gemini server overload/timeout
 
 
 def call_with_retry(item: dict):
@@ -130,10 +141,16 @@ def call_with_retry(item: dict):
         except APIError as e:
             # Gemini-side errors (generate_text tries Gemini first)
             status = getattr(e, "code", None)
-            is_transient = status in TRANSIENT_STATUS_CODES or "RESOURCE_EXHAUSTED" in str(e) or "UNAVAILABLE" in str(e)
+            is_transient = (
+                status in TRANSIENT_STATUS_CODES
+                or "RESOURCE_EXHAUSTED" in str(e)
+                or "UNAVAILABLE" in str(e)
+            )
             if is_transient and attempt < MAX_RETRIES_ON_RATE_LIMIT:
-                print(f"  Transient Gemini error ({status}), attempt {attempt}/{MAX_RETRIES_ON_RATE_LIMIT}, "
-                      f"waiting {RATE_LIMIT_BACKOFF_SECONDS}s before retry...")
+                print(
+                    f"  Transient Gemini error ({status}), attempt {attempt}/{MAX_RETRIES_ON_RATE_LIMIT}, "
+                    f"waiting {RATE_LIMIT_BACKOFF_SECONDS}s before retry..."
+                )
                 time.sleep(RATE_LIMIT_BACKOFF_SECONDS)
             else:
                 raise
@@ -145,14 +162,20 @@ def call_with_retry(item: dict):
             # is a rolling window, so a short backoff is worth it rather
             # than failing the whole eval run.
             status = getattr(e, "status_code", None)
-            is_transient = status in TRANSIENT_STATUS_CODES or "rate_limit" in str(e).lower()
+            is_transient = (
+                status in TRANSIENT_STATUS_CODES or "rate_limit" in str(e).lower()
+            )
             if is_transient and attempt < MAX_RETRIES_ON_RATE_LIMIT:
-                print(f"  Transient Groq error ({status}), attempt {attempt}/{MAX_RETRIES_ON_RATE_LIMIT}, "
-                      f"waiting {RATE_LIMIT_BACKOFF_SECONDS}s before retry...")
+                print(
+                    f"  Transient Groq error ({status}), attempt {attempt}/{MAX_RETRIES_ON_RATE_LIMIT}, "
+                    f"waiting {RATE_LIMIT_BACKOFF_SECONDS}s before retry..."
+                )
                 time.sleep(RATE_LIMIT_BACKOFF_SECONDS)
             else:
                 raise
-    raise RuntimeError(f"Gave up after {MAX_RETRIES_ON_RATE_LIMIT} retries on transient errors: {item['query']!r}")
+    raise RuntimeError(
+        f"Gave up after {MAX_RETRIES_ON_RATE_LIMIT} retries on transient errors: {item['query']!r}"
+    )
 
 
 def run_retrieval(eval_items: list[dict]) -> list[dict]:
@@ -163,12 +186,14 @@ def run_retrieval(eval_items: list[dict]) -> list[dict]:
         print(f"[{i}/{len(eval_items)}] ({item['collection']}) {item['query']}")
         result = call_with_retry(item)
         contexts = [s["chunk_text"] for s in result.get("sources", [])]
-        records.append({
-            "user_input": item["query"],
-            "response": result["answer"],
-            "retrieved_contexts": contexts or ["(no context retrieved)"],
-            "collection": item["collection"],
-        })
+        records.append(
+            {
+                "user_input": item["query"],
+                "response": result["answer"],
+                "retrieved_contexts": contexts or ["(no context retrieved)"],
+                "collection": item["collection"],
+            }
+        )
         time.sleep(SECONDS_BETWEEN_CALLS)
     return records
 
@@ -178,9 +203,9 @@ def run_eval():
     print(f"Running retrieval for {len(eval_items)} eval questions...\n")
     records = run_retrieval(eval_items)
 
-    dataset = EvaluationDataset.from_list([
-        {k: v for k, v in r.items() if k != "collection"} for r in records
-    ])
+    dataset = EvaluationDataset.from_list(
+        [{k: v for k, v in r.items() if k != "collection"} for r in records]
+    )
 
     # llama-3.1-8b-instant returned 404 model_not_found on this account
     # (not a quota issue — it's just not enabled/available here), so the
@@ -222,10 +247,16 @@ def run_eval():
     mlflow.set_experiment(MLFLOW_EXPERIMENT)
     with mlflow.start_run(run_name="rag-eval"):
         mlflow.log_metric("faithfulness_overall", float(overall[FAITHFULNESS_COL]))
-        mlflow.log_metric("context_precision_overall", float(overall[CONTEXT_PRECISION_COL]))
+        mlflow.log_metric(
+            "context_precision_overall", float(overall[CONTEXT_PRECISION_COL])
+        )
         for collection, row in summary.iterrows():
-            mlflow.log_metric(f"faithfulness_{collection}", float(row[FAITHFULNESS_COL]))
-            mlflow.log_metric(f"context_precision_{collection}", float(row[CONTEXT_PRECISION_COL]))
+            mlflow.log_metric(
+                f"faithfulness_{collection}", float(row[FAITHFULNESS_COL])
+            )
+            mlflow.log_metric(
+                f"context_precision_{collection}", float(row[CONTEXT_PRECISION_COL])
+            )
         mlflow.log_artifact(str(RESULTS_PATH))
         mlflow.log_artifact(str(EVAL_SET_PATH))
 
