@@ -1,7 +1,8 @@
 import asyncio
 import uuid
-from app.core.database import AsyncSessionLocal
+
 from app.announcements.models import Announcement
+from app.core.database import AsyncSessionLocal
 
 SAMPLE_ANNOUNCEMENTS = [
     {
@@ -21,6 +22,7 @@ SAMPLE_ANNOUNCEMENTS = [
     },
 ]
 
+
 async def seed_announcements():
     async with AsyncSessionLocal() as db:
         for item in SAMPLE_ANNOUNCEMENTS:
@@ -28,6 +30,7 @@ async def seed_announcements():
             db.add(announcement)
         await db.commit()
     print(f"Seeded {len(SAMPLE_ANNOUNCEMENTS)} announcements.")
+
 
 if __name__ == "__main__":
     asyncio.run(seed_announcements())
