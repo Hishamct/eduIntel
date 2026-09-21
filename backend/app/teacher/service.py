@@ -1,22 +1,23 @@
-from fastapi import HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
-from app.student.models import HomeworkSubmission
-import uuid
-from sqlalchemy.orm import selectinload
-from app.teacher.schemas import TeacherHomeworkSubmissionRead
-from app.teacher.models import Assignment
-from sqlalchemy import select,func
-import os
-import aiofiles
-from fastapi import UploadFile
 import logging
-from app.teacher.models import StudyMaterial
+import os
+import uuid
+
+import aiofiles
+from fastapi import HTTPException, UploadFile
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
 from app.ocr import service as ocr_service
 from app.rag.service import ingest_study_material
+from app.student.models import HomeworkSubmission
+from app.teacher.models import Assignment, StudyMaterial
+from app.teacher.schemas import TeacherHomeworkSubmissionRead
 
 logger = logging.getLogger(__name__)
 
 STUDY_MATERIAL_UPLOAD_DIR = "uploads/study_materials"
+
 
 async def grade_homework_submission(
     db: AsyncSession,
@@ -115,16 +116,19 @@ async def list_assignments(db: AsyncSession, class_section: str | None = None):
     result = await db.execute(query)
     return result.scalars().all()
 
+
 async def get_teacher_dashboard_summary(db: AsyncSession) -> dict:
     pending_result = await db.execute(
-        select(func.count()).select_from(HomeworkSubmission)
+        select(func.count())
+        .select_from(HomeworkSubmission)
         .where(HomeworkSubmission.status == "submitted")
     )
     pending_grading = pending_result.scalar_one()
 
     students_result = await db.execute(
-        select(func.count(func.distinct(HomeworkSubmission.student_id)))
-        .select_from(HomeworkSubmission)
+        select(func.count(func.distinct(HomeworkSubmission.student_id))).select_from(
+            HomeworkSubmission
+        )
     )
     students_assigned = students_result.scalar_one()
 
@@ -132,8 +136,6 @@ async def get_teacher_dashboard_summary(db: AsyncSession) -> dict:
         "pending_grading": pending_grading,
         "students_assigned": students_assigned,
     }
-
-
 
 
 async def save_study_material(
@@ -171,7 +173,9 @@ async def save_study_material(
             extracted_text = result["extracted_text"]
             extraction_method = "pdf_text"
         except HTTPException as e:
-            logger.warning(f"PDF extraction failed for study material upload: {e.detail}")
+            logger.warning(
+                f"PDF extraction failed for study material upload: {e.detail}"
+            )
 
     material = StudyMaterial(
         teacher_id=teacher_id,
@@ -197,7 +201,9 @@ async def save_study_material(
                 extracted_text=extracted_text,
             )
         except Exception as e:
-            logger.warning(f"RAG ingestion failed for study material {material.id}: {e}")
+            logger.warning(
+                f"RAG ingestion failed for study material {material.id}: {e}"
+            )
 
     return material
 
@@ -209,8 +215,8 @@ async def list_study_materials(db: AsyncSession, subject: str | None = None):
     result = await db.execute(query)
     return result.scalars().all()
 
-from app.users.models import User, StudentProfile
-from sqlalchemy import select
+
+from app.users.models import StudentProfile, User
 
 
 async def list_students_for_teacher(db: AsyncSession, class_section: str | None = None):
@@ -223,7 +229,9 @@ async def list_students_for_teacher(db: AsyncSession, class_section: str | None 
     if class_section:
         # class_section like "10-A" — StudentProfile stores grade/section separately
         grade, _, section = class_section.partition("-")
-        query = query.where(StudentProfile.grade == grade, StudentProfile.section == section)
+        query = query.where(
+            StudentProfile.grade == grade, StudentProfile.section == section
+        )
 
     result = await db.execute(query)
     rows = result.all()

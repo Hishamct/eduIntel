@@ -7,19 +7,26 @@ retrieval correctly differentiates between topics via embeddings.
 
 Run: python -m app.teacher.seed_study_materials
 """
+
 import asyncio
-import uuid
+
 from sqlalchemy import select
+
 from app.core.database import AsyncSessionLocal
-from app.users.models import User
-from app.teacher.models import StudyMaterial
 from app.rag.service import ingest_study_material
+from app.teacher.models import StudyMaterial
+from app.users.models import User
 
 # Matches SUBJECT_TOPICS in app/admin/seed_ml_dataset.py exactly — keep in sync.
 SUBJECT_TOPICS = {
     "MATHEMATICS": ["Algebra", "Trigonometry", "Calculus", "Geometry", "Statistics"],
     "PHYSICS": ["Mechanics", "Thermodynamics", "Optics", "Electromagnetism"],
-    "CHEMISTRY": ["Organic Chemistry", "Periodic Table", "Chemical Bonding", "Acids & Bases"],
+    "CHEMISTRY": [
+        "Organic Chemistry",
+        "Periodic Table",
+        "Chemical Bonding",
+        "Acids & Bases",
+    ],
     "COMPUTER SCIENCE": ["Data Structures", "Algorithms", "Databases", "Networking"],
 }
 
@@ -52,7 +59,9 @@ async def seed():
         teacher = teacher_result.scalars().first()
 
         if not teacher:
-            print("No teacher account found — cannot attribute seeded materials. Create a teacher account first.")
+            print(
+                "No teacher account found — cannot attribute seeded materials. Create a teacher account first."
+            )
             return
 
         created_count = 0
@@ -97,7 +106,9 @@ async def seed():
                 created_count += 1
 
         await db.commit()
-        print(f"Seeded {created_count} study materials across {len(SUBJECT_TOPICS)} subjects.")
+        print(
+            f"Seeded {created_count} study materials across {len(SUBJECT_TOPICS)} subjects."
+        )
 
 
 if __name__ == "__main__":

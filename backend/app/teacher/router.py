@@ -1,24 +1,29 @@
-from fastapi import APIRouter, Depends,HTTPException
 import uuid
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.users.dependencies import require_role
-from app.users.models import User
+
 from app.core.database import get_db
-from app.teacher.schemas import GradeSubmission, TeacherHomeworkSubmissionRead, AssignmentCreate, AssignmentRead,StudyMaterialRead
 from app.student.schemas import HomeworkSubmissionRead
-from typing import List
+from app.teacher.schemas import (
+    AssignmentCreate,
+    AssignmentRead,
+    GradeSubmission,
+    StudyMaterialRead,
+    TeacherHomeworkSubmissionRead,
+)
 from app.teacher.service import (
+    create_assignment,
+    get_teacher_dashboard_summary,
     grade_homework_submission,
     list_all_submissions,
-    create_assignment,
     list_assignments,
-    get_teacher_dashboard_summary,
-    save_study_material, list_study_materials,
+    list_study_materials,
+    save_study_material,
 )
-from app.teacher.models import Assignment
-from fastapi import UploadFile, File, Form
-from sqlalchemy import select
-
+from app.users.dependencies import require_role
+from app.users.models import User
 
 router = APIRouter(prefix="/teacher", tags=["teacher"])
 
@@ -56,10 +61,7 @@ async def grade_homework(
     return submission
 
 
-
-
-
-@router.get("/homework", response_model=List[TeacherHomeworkSubmissionRead])
+@router.get("/homework", response_model=list[TeacherHomeworkSubmissionRead])
 async def get_all_submissions(
     status: str | None = None,
     current_user: User = Depends(require_role("teacher")),
@@ -88,7 +90,7 @@ async def post_assignment(
     return assignment
 
 
-@router.get("/assignments", response_model=List[AssignmentRead])
+@router.get("/assignments", response_model=list[AssignmentRead])
 async def get_assignments(
     class_section: str | None = None,
     current_user: User = Depends(require_role("teacher")),
@@ -96,8 +98,6 @@ async def get_assignments(
 ):
     assignments = await list_assignments(db=db, class_section=class_section)
     return assignments
-
-
 
 
 @router.post("/study-materials/upload", response_model=StudyMaterialRead)
@@ -127,8 +127,11 @@ async def get_study_materials(
 ):
     return await list_study_materials(db=db, subject=subject)
 
+
 from fastapi.responses import FileResponse
+
 from app.student.models import HomeworkSubmission
+
 
 @router.get("/homework/{submission_id}/file")
 async def download_homework_file(
@@ -149,11 +152,12 @@ async def download_homework_file(
         filename=submission.original_filename,
     )
 
-from app.teacher.service import list_students_for_teacher
+
 from app.teacher.schemas import StudentListItem
+from app.teacher.service import list_students_for_teacher
 
 
-@router.get("/students", response_model=List[StudentListItem])
+@router.get("/students", response_model=list[StudentListItem])
 async def get_teacher_students(
     class_section: str | None = None,
     current_user: User = Depends(require_role("teacher")),

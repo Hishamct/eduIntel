@@ -1,13 +1,13 @@
-from datetime import datetime
+from datetime import date, datetime
 from uuid import UUID
+
 from pydantic import BaseModel, ConfigDict
-from datetime import date
+
 
 class GradeSubmission(BaseModel):
     score: int
     max_score: int
     feedback: str | None = None
-
 
 
 class TeacherHomeworkSubmissionRead(BaseModel):
@@ -27,6 +27,7 @@ class TeacherHomeworkSubmissionRead(BaseModel):
     feedback: str | None
     extracted_text: str | None
     ocr_confidence: float | None
+
 
 class AssignmentCreate(BaseModel):
     title: str
@@ -49,6 +50,7 @@ class AssignmentRead(BaseModel):
     instructions: str | None
     created_at: datetime
 
+
 class StudyMaterialRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -60,6 +62,7 @@ class StudyMaterialRead(BaseModel):
     extracted_text: str | None
     extraction_method: str | None
     created_at: datetime
+
 
 class StudentListItem(BaseModel):
     model_config = ConfigDict(from_attributes=True)
