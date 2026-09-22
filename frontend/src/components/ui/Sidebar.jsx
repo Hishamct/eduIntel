@@ -27,7 +27,7 @@ export const PORTAL_NAV_ITEMS = {
     { id: 'reports', label: 'Institutional Reports', icon: 'description' },
     { id: 'timetable', label: 'Timetable', icon: 'calendar_month' },
     { id: 'salary', label: 'Salary Management', icon: 'payments' },
-    { id: 'settings', label: 'Settings', icon: 'settings' }
+    
   ],
   teacher: [
     { id: 'dashboard', label: 'Dashboard', icon: 'dashboard' },
@@ -36,7 +36,7 @@ export const PORTAL_NAV_ITEMS = {
     { id: 'materials', label: 'Study Materials', icon: 'menu_book' },
     { id: 'exams', label: 'Exam Results', icon: 'grade' },
     { id: 'flagged', label: 'Flagged Students', icon: 'flag' },
-    { id: 'settings', label: 'Settings', icon: 'settings' }
+    
   ],
   student: [
     { id: 'dashboard', label: 'Dashboard', icon: 'dashboard' },
@@ -44,7 +44,7 @@ export const PORTAL_NAV_ITEMS = {
     { id: 'doubts', label: 'Doubt Forum', icon: 'forum' },
     { id: 'materials', label: 'Study Materials', icon: 'menu_book' },
     { id: 'self-eval', label: 'Self-Evaluation', icon: 'quiz' },
-    { id: 'settings', label: 'Settings', icon: 'settings' }
+    
   ]
 };
 

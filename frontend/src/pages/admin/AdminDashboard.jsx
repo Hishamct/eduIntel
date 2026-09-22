@@ -117,7 +117,7 @@ function AdminDashboard() {
 
       <div className="edu-main-wrapper">
         <TopBar
-          user={{ name: "Dr. Aria Vance", role: "Super Admin" }}
+          user={{ name: data.name, role: data.role }}
           onProfileMenuSelect={handleProfileSelect}
         />
 

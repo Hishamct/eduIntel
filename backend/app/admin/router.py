@@ -37,12 +37,14 @@ async def admin_dashboard(
     db: AsyncSession = Depends(get_db),
 ):
     summary = await get_admin_dashboard_summary(db=db)
+    display_name = current_user.name or current_user.email.split("@")[0]
     return {
-        "message": f"Welcome, {current_user.email}",
+        "message": f"Welcome, {display_name}",
+        "name": display_name,
         "role": current_user.role,
         "total_students": summary["total_students"],
         "total_teachers": summary["total_teachers"],
-        "revenue_this_month": 0,  # no fee/payment module built yet — genuinely no data source
+        "revenue_this_month": 0, 
     }
 
 
