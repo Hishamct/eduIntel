@@ -26,6 +26,7 @@ services:
     volumes:
       - uploads:/app/uploads
       - chroma_data:/app/chroma_data
+      - ./backend/app/ml/models:/app/app/ml/models
 
   frontend:
     build:
