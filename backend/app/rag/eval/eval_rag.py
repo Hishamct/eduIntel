@@ -1,37 +1,9 @@
-"""
-RAG faithfulness / groundedness evaluation harness for EduIntel AI.
-
-Runs the real retrieve_and_generate() pipeline against a curated eval set
-covering both ChromaDB collections (portal_help_docs, study_materials),
-then scores each answer with RAGAS.
-
-Judge LLM: Groq (NOT Gemini). This is deliberate — the app's own RAG
-generation already uses Gemini, and Gemini rate limits have bitten this
-project before. Keeping the eval's judge calls on Groq means running the
-eval never competes with, or gets blocked by, the same quota the live app
-depends on.
-
-Metrics used (both reference-free, LLM-judge only, no embeddings model
-required):
-- Faithfulness: is the generated answer actually grounded in the
-  retrieved context, or does it add unsupported claims?
-- LLMContextPrecisionWithoutReference: are the retrieved chunks actually
-  relevant to the question, or mostly noise?
-
-Deliberately NOT included (documented scope decisions, not oversights):
-- context_recall: needs a hand-written "ideal answer" per question — too
-  much curation time this close to submission.
-- answer_relevancy: needs an embedding model, adding a new dependency/API
-  surface for one extra metric.
-
-Usage (run from the `backend` folder, same place you run uvicorn from):
-    python -m app.rag.eval.eval_rag
-
-Requires (add to requirements.txt if missing):
-    ragas
-    langchain-groq
-    mlflow
-    pandas
+"""This is a RAGAS-based harness — for each question in the eval set, it runs the actual retrieve-and-generate pipeline, then scores the output on four metrics.
+context_precision — of what got retrieved, how much was actually relevant
+context_recall — did retrieval pull in everything needed to answer
+faithfulness — does the generated answer actually stick to the retrieved context, or drift
+answer_relevancy — does the answer address the question asked
+Gemini itself acts as the judge model scoring these — that's a standard RAGAS pattern, using an LLM to grade another LLM's output against the retrieved context."
 """
 
 import json
@@ -58,6 +30,7 @@ if "langchain_community.chat_models.vertexai" not in sys.modules:
     sys.modules["langchain_community.chat_models.vertexai"] = _fake_vertexai_module
 
 import mlflow
+mlflow.set_tracking_uri("sqlite:///mlflow.db")
 from google.genai.errors import APIError
 from groq import APIStatusError as GroqAPIStatusError
 from langchain_groq import ChatGroq
