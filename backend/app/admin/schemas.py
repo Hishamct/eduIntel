@@ -50,6 +50,7 @@ class TeacherSummary(BaseModel):
 
     id: UUID
     email: str
+    name: str | None = None
 
 
 class StudentEnrollCreate(BaseModel):

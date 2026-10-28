@@ -52,7 +52,7 @@ async def grade_homework_submission(
     return submission
 
 
-async def list_all_submissions(db: AsyncSession, status_filter: str | None = None):
+async def list_all_submissions(db: AsyncSession, status_filter: str | None = None, limit: int = 100):
     query = (
         select(HomeworkSubmission)
         .options(selectinload(HomeworkSubmission.student))
@@ -60,6 +60,7 @@ async def list_all_submissions(db: AsyncSession, status_filter: str | None = Non
     )
     if status_filter:
         query = query.where(HomeworkSubmission.status == status_filter)
+    query = query.limit(limit)
     result = await db.execute(query)
     submissions = result.scalars().all()
 

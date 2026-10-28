@@ -64,10 +64,11 @@ async def grade_homework(
 @router.get("/homework", response_model=list[TeacherHomeworkSubmissionRead])
 async def get_all_submissions(
     status: str | None = None,
+    limit: int = 100,
     current_user: User = Depends(require_role("teacher")),
     db: AsyncSession = Depends(get_db),
 ):
-    submissions = await list_all_submissions(db=db, status_filter=status)
+    submissions = await list_all_submissions(db=db, status_filter=status, limit=limit)
     return submissions
 
 
