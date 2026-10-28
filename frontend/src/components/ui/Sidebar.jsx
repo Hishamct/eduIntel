@@ -2,18 +2,7 @@ import React from 'react';
 import './ui.css';
 
 /**
- * Sidebar Navigation Component
- *
- * @param {Object} props
- * @param {string} [props.logoText="EduIntel AI"] - Logo/brand header text
- * @param {string} [props.roleText="Administrator"] - User role badge text
- * @param {Array<{id: string, label: string, icon: string, roles?: string[]}>} [props.items] - Menu items
- * @param {string} [props.activeId] - Currently active menu item ID
- * @param {function(string): void} [props.onSelect] - Callback when an item is selected
- * @param {boolean} [props.isCollapsed=false] - Whether sidebar is in collapsed icon-only mode
- * @param {function(): void} [props.onToggleCollapse] - Toggle collapse handler
- * @param {string} [props.userRole="admin"] - Current active user role for filtering items
- * @param {Object} [props.accentAction] - Optional standout accent action button { label: string, icon?: string, onClick: function }
+ * Sidebar Navigation Component - Option 1 Light Glassmorphic Theme
  */
 export const PORTAL_NAV_ITEMS = {
   admin: [
@@ -27,7 +16,6 @@ export const PORTAL_NAV_ITEMS = {
     { id: 'reports', label: 'Institutional Reports', icon: 'description' },
     { id: 'timetable', label: 'Timetable', icon: 'calendar_month' },
     { id: 'salary', label: 'Salary Management', icon: 'payments' },
-    
   ],
   teacher: [
     { id: 'dashboard', label: 'Dashboard', icon: 'dashboard' },
@@ -36,7 +24,6 @@ export const PORTAL_NAV_ITEMS = {
     { id: 'materials', label: 'Study Materials', icon: 'menu_book' },
     { id: 'exams', label: 'Exam Results', icon: 'grade' },
     { id: 'flagged', label: 'Flagged Students', icon: 'flag' },
-    
   ],
   student: [
     { id: 'dashboard', label: 'Dashboard', icon: 'dashboard' },
@@ -44,12 +31,11 @@ export const PORTAL_NAV_ITEMS = {
     { id: 'doubts', label: 'Doubt Forum', icon: 'forum' },
     { id: 'materials', label: 'Study Materials', icon: 'menu_book' },
     { id: 'self-eval', label: 'Self-Evaluation', icon: 'quiz' },
-    
   ]
 };
 
 export default function Sidebar({
-  logoText = "EduIntel AI",
+  logoText = "eduIntel",
   roleText = "Administrator Portal",
   items,
   activeId = 'dashboard',
@@ -57,14 +43,14 @@ export default function Sidebar({
   isCollapsed = false,
   onToggleCollapse,
   userRole = 'admin',
-  accentAction = { label: 'NEW ANALYSIS', icon: 'add', onClick: () => {} }
+  accentAction = { label: 'Upgrade Pro', icon: 'auto_awesome', onClick: () => {} }
 }) {
   const menuItems = items !== undefined ? items : (PORTAL_NAV_ITEMS[userRole] || PORTAL_NAV_ITEMS.admin);
   const visibleItems = menuItems.filter(
     (item) => !item.roles || item.roles.includes(userRole)
   );
 
-  const sidebarWidth = isCollapsed ? '64px' : '260px';
+  const sidebarWidth = isCollapsed ? '72px' : '260px';
 
   return (
     <aside
@@ -76,66 +62,96 @@ export default function Sidebar({
       {/* Header / Brand & Toggle */}
       <div
         style={{
-          padding: isCollapsed ? '0 12px 24px' : '0 24px 24px',
+          padding: isCollapsed ? '0 12px 20px' : '0 20px 20px',
           display: 'flex',
           alignItems: 'center',
           justifyContent: isCollapsed ? 'center' : 'space-between',
-          borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
-          marginBottom: '16px'
+          borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+          marginBottom: '20px'
         }}
       >
         {!isCollapsed && (
-          <div>
-            <h1
-              className="edu-font-heading"
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div
               style={{
-                fontSize: '20px',
-                fontWeight: 700,
-                margin: 0,
-                color: '#FFFFFF',
-                whiteSpace: 'nowrap'
+                width: '34px',
+                height: '34px',
+                borderRadius: '10px',
+                background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)'
               }}
             >
-              {logoText}
-            </h1>
-            <p
-              className="edu-font-body"
-              style={{
-                fontSize: '10px',
-                letterSpacing: '0.05em',
-                textTransform: 'uppercase',
-                color: '#92ADCF',
-                margin: '2px 0 0 0',
-                whiteSpace: 'nowrap'
-              }}
-            >
-              {roleText}
-            </p>
+              <span className="material-symbols-outlined" style={{ color: '#FFFFFF', fontSize: '20px' }}>
+                school
+              </span>
+            </div>
+            <div>
+              <h1
+                className="edu-font-heading"
+                style={{
+                  fontSize: '18px',
+                  fontWeight: 700,
+                  margin: 0,
+                  color: '#FFFFFF',
+                  letterSpacing: '-0.02em',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                {logoText}
+              </h1>
+              <p
+                className="edu-font-body"
+                style={{
+                  fontSize: '10px',
+                  fontWeight: 500,
+                  letterSpacing: '0.05em',
+                  textTransform: 'uppercase',
+                  color: '#94A3B8',
+                  margin: '1px 0 0 0',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                {roleText}
+              </p>
+            </div>
           </div>
         )}
+
         <button
           onClick={onToggleCollapse}
           title={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
           style={{
-            background: 'transparent',
-            border: 'none',
-            color: '#92ADCF',
+            background: 'rgba(255, 255, 255, 0.05)',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
+            color: '#94A3B8',
             cursor: 'pointer',
-            padding: '4px',
+            padding: '6px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            borderRadius: '4px'
+            borderRadius: '8px',
+            transition: 'all 0.15s ease'
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.color = '#FFFFFF';
+            e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.12)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.color = '#94A3B8';
+            e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)';
           }}
         >
-          <span className="material-symbols-outlined">
+          <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>
             {isCollapsed ? 'chevron_right' : 'menu_open'}
           </span>
         </button>
       </div>
 
       {/* Navigation Links */}
-      <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+      <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '6px', padding: '0 12px' }}>
         {visibleItems.map((item) => {
           const isActive = item.id === activeId;
 
@@ -149,66 +165,69 @@ export default function Sidebar({
                 alignItems: 'center',
                 gap: '12px',
                 width: '100%',
-                padding: isCollapsed ? '12px 0' : '12px 24px',
+                padding: isCollapsed ? '12px 0' : '10px 16px',
                 justifyContent: isCollapsed ? 'center' : 'flex-start',
-                backgroundColor: isActive ? 'rgba(255, 255, 255, 0.15)' : 'transparent',
-                borderLeft: isActive ? '4px solid #C97A2B' : '4px solid transparent',
-                color: isActive ? '#FFFFFF' : '#92ADCF',
-                borderTop: 'none',
-                borderRight: 'none',
-                borderBottom: 'none',
+                backgroundColor: isActive ? 'rgba(16, 185, 129, 0.16)' : 'transparent',
+                border: isActive ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid transparent',
+                borderRadius: '12px',
+                color: isActive ? '#A7F3D0' : '#94A3B8',
                 textAlign: 'left',
                 cursor: 'pointer',
-                transition: 'all 0.15s ease'
+                transition: 'all 0.15s ease',
+                boxShadow: isActive ? '0 4px 14px rgba(16, 185, 129, 0.15)' : 'none'
               }}
               onMouseEnter={(e) => {
-                if (!isActive) e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)';
+                if (!isActive) {
+                  e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.06)';
+                  e.currentTarget.style.color = '#F1F5F9';
+                }
               }}
               onMouseLeave={(e) => {
-                if (!isActive) e.currentTarget.style.backgroundColor = 'transparent';
+                if (!isActive) {
+                  e.currentTarget.style.backgroundColor = 'transparent';
+                  e.currentTarget.style.color = '#94A3B8';
+                }
               }}
             >
-              <span className="material-symbols-outlined" style={{ fontSize: '20px' }}>
+              <span
+                className="material-symbols-outlined"
+                style={{
+                  fontSize: '20px',
+                  color: isActive ? '#10B981' : 'inherit'
+                }}
+              >
                 {item.icon}
               </span>
               {!isCollapsed && (
                 <span
                   className="edu-font-body"
-                  style={{ fontSize: '14px', fontWeight: isActive ? 600 : 400, whiteSpace: 'nowrap' }}
+                  style={{
+                    fontSize: '13.5px',
+                    fontWeight: isActive ? 600 : 400,
+                    whiteSpace: 'nowrap',
+                    color: isActive ? '#FFFFFF' : 'inherit'
+                  }}
                 >
                   {item.label}
                 </span>
+              )}
+              {isActive && !isCollapsed && (
+                <span
+                  style={{
+                    marginLeft: 'auto',
+                    width: '6px',
+                    height: '6px',
+                    borderRadius: '50%',
+                    backgroundColor: '#10B981',
+                    boxShadow: '0 0 8px #10B981'
+                  }}
+                />
               )}
             </button>
           );
         })}
       </nav>
-
-      {/* Accent Standout CTA */}
-      {accentAction && (
-        <div style={{ padding: isCollapsed ? '12px' : '16px 24px 8px' }}>
-          <button
-            onClick={accentAction.onClick}
-            className="edu-btn-accent"
-            style={{
-              width: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: isCollapsed ? '0' : '8px',
-              padding: isCollapsed ? '10px 0' : '12px 16px'
-            }}
-            title={isCollapsed ? accentAction.label : undefined}
-          >
-            {accentAction.icon && (
-              <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>
-                {accentAction.icon}
-              </span>
-            )}
-            {!isCollapsed && accentAction.label}
-          </button>
-        </div>
-      )}
     </aside>
   );
 }
+

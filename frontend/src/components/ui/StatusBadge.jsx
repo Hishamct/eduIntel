@@ -12,25 +12,50 @@ import './ui.css';
 export default function StatusBadge({
   variant = 'on-track',
   label,
-  customColor
+  customColor,
+  customBg
 }) {
   const variantStyles = {
     'on-track': {
-      bg: '#3C8C5D',
+      bg: '#DCFCE7',
+      text: '#15803D',
       defaultLabel: 'ON-TRACK'
     },
     'needs-attention': {
-      bg: '#D9922E',
+      bg: '#FEF3C7',
+      text: '#B45309',
       defaultLabel: 'NEEDS-ATTENTION'
     },
     'flagged-at-risk': {
-      bg: '#B23A2E',
+      bg: '#FEE2E2',
+      text: '#B91C1C',
       defaultLabel: 'FLAGGED-AT-RISK'
+    },
+    'low-risk': {
+      bg: '#DCFCE7',
+      text: '#15803D',
+      defaultLabel: 'LOW RISK'
+    },
+    'medium-risk': {
+      bg: '#FEF3C7',
+      text: '#B45309',
+      defaultLabel: 'MEDIUM RISK'
+    },
+    'high-risk': {
+      bg: '#FEE2E2',
+      text: '#B91C1C',
+      defaultLabel: 'HIGH RISK'
+    },
+    'info': {
+      bg: '#E0F2FE',
+      text: '#0369A1',
+      defaultLabel: 'INFO'
     }
   };
 
   const current = variantStyles[variant] || variantStyles['on-track'];
-  const backgroundColor = customColor || current.bg;
+  const backgroundColor = customBg || current.bg;
+  const textColor = customColor || current.text;
   const displayText = label || current.defaultLabel;
 
   return (
@@ -39,18 +64,18 @@ export default function StatusBadge({
         display: 'inline-flex',
         alignItems: 'center',
         justifyContent: 'center',
-        padding: '4px 12px',
+        padding: '3px 10px',
         backgroundColor: backgroundColor,
-        color: '#FFFFFF',
-        fontFamily: 'var(--font-mono)',
-        fontSize: '10px',
+        color: textColor,
+        fontFamily: 'var(--font-body)',
+        fontSize: '11px',
         fontWeight: 700,
-        letterSpacing: '0.05em',
+        letterSpacing: '0.04em',
         borderRadius: '9999px',
         textTransform: 'uppercase',
-        lineHeight: 1,
+        lineHeight: 1.2,
         whiteSpace: 'nowrap',
-        boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)'
+        boxShadow: '0 1px 2px rgba(0, 0, 0, 0.02)'
       }}
     >
       {displayText}

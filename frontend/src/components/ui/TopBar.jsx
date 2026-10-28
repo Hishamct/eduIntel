@@ -4,28 +4,17 @@ import { logout } from '../../api/auth';
 import './ui.css';
 
 /**
- * TopBar Component
- *
- * @param {Object} props
- * @param {string} [props.searchPlaceholder="Search students, faculty, or datasets..."]
- * @param {string} [props.searchValue=""]
- * @param {function(string): void} [props.onSearchChange]
- * @param {function(string): void} [props.onSearchSubmit]
- * @param {number} [props.notificationsCount=1]
- * @param {function(): void} [props.onNotificationClick]
- * @param {{name: string, role: string, avatarUrl?: string}} [props.user]
- * @param {Array<{id: string, label: string, icon?: string}>} [props.profileMenuItems]
- * @param {function(string): void} [props.onProfileMenuSelect]
+ * TopBar Component - Glassmorphic Header
  */
 export default function TopBar({
-  searchPlaceholder = "Search students, faculty, or datasets...",
+  searchPlaceholder = "Search students, faculty, or analytical reports...",
   searchValue = "",
   onSearchChange,
   onSearchSubmit,
-  notificationsCount = 1,
+  notificationsCount = 2,
   onNotificationClick,
   user = {
-    name: "Dr. Aria Vance",
+    name: "Dr. Sarah Evans",
     role: "Super Admin",
     avatarUrl: ""
   },
@@ -34,7 +23,8 @@ export default function TopBar({
     { id: 'settings', label: 'Account Settings', icon: 'settings' },
     { id: 'logout', label: 'Sign Out', icon: 'logout' }
   ],
-  onProfileMenuSelect
+  onProfileMenuSelect,
+  showAiMode = true
 }) {
   const navigate = useNavigate();
   const [internalSearch, setInternalSearch] = useState(searchValue);
@@ -77,9 +67,8 @@ export default function TopBar({
     }
   };
 
-  // User initials fallback
   const getInitials = (name) => {
-    if (!name) return "U";
+    if (!name) return "SE";
     return name
       .split(' ')
       .map((n) => n[0])
@@ -96,11 +85,11 @@ export default function TopBar({
           className="material-symbols-outlined"
           style={{
             position: 'absolute',
-            left: '12px',
+            left: '16px',
             top: '50%',
             transform: 'translateY(-50%)',
-            color: '#5F6774',
-            fontSize: '20px',
+            color: '#94A3B8',
+            fontSize: '19px',
             pointerEvents: 'none'
           }}
         >
@@ -114,69 +103,76 @@ export default function TopBar({
           placeholder={searchPlaceholder}
           style={{
             width: '100%',
-            padding: '8px 12px 8px 40px',
-            backgroundColor: '#F4F4F1',
-            border: '1px solid #E5E5E1',
-            borderRadius: '4px',
-            fontSize: '14px',
-            color: '#1B2330',
+            padding: '9px 16px 9px 44px',
+            backgroundColor: 'rgba(255, 255, 255, 0.7)',
+            border: '1px solid rgba(226, 232, 240, 0.9)',
+            borderRadius: '9999px',
+            fontSize: '13.5px',
+            color: '#1E293B',
             outline: 'none',
             fontFamily: 'var(--font-body)',
-            transition: 'border-color 0.2s ease, background-color 0.2s ease'
+            boxShadow: '0 2px 6px rgba(0, 0, 0, 0.02)',
+            transition: 'all 0.2s ease'
           }}
           onFocus={(e) => {
-            e.target.style.borderColor = '#26415E';
+            e.target.style.borderColor = '#10B981';
             e.target.style.backgroundColor = '#FFFFFF';
+            e.target.style.boxShadow = '0 0 0 3px rgba(16, 185, 129, 0.15)';
           }}
           onBlur={(e) => {
-            e.target.style.borderColor = '#E5E5E1';
-            e.target.style.backgroundColor = '#F4F4F1';
+            e.target.style.borderColor = 'rgba(226, 232, 240, 0.9)';
+            e.target.style.backgroundColor = 'rgba(255, 255, 255, 0.7)';
+            e.target.style.boxShadow = '0 2px 6px rgba(0, 0, 0, 0.02)';
           }}
         />
       </div>
 
       {/* Right Controls: Notifications & Profile Menu */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
         {/* Notification Bell */}
         <button
           onClick={onNotificationClick}
           title="Notifications"
           style={{
             position: 'relative',
-            background: 'transparent',
-            border: 'none',
-            color: '#5F6774',
+            background: 'rgba(255, 255, 255, 0.8)',
+            border: '1px solid rgba(226, 232, 240, 0.8)',
+            color: '#64748B',
             cursor: 'pointer',
-            padding: '8px',
+            width: '38px',
+            height: '38px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             borderRadius: '50%',
-            transition: 'color 0.15s ease, background-color 0.15s ease'
+            transition: 'all 0.15s ease',
+            boxShadow: '0 2px 6px rgba(0,0,0,0.03)'
           }}
           onMouseEnter={(e) => {
-            e.currentTarget.style.color = '#26415E';
-            e.currentTarget.style.backgroundColor = '#F1F1ED';
+            e.currentTarget.style.color = '#0F172A';
+            e.currentTarget.style.backgroundColor = '#FFFFFF';
+            e.currentTarget.style.borderColor = '#CBD5E1';
           }}
           onMouseLeave={(e) => {
-            e.currentTarget.style.color = '#5F6774';
-            e.currentTarget.style.backgroundColor = 'transparent';
+            e.currentTarget.style.color = '#64748B';
+            e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.8)';
+            e.currentTarget.style.borderColor = 'rgba(226, 232, 240, 0.8)';
           }}
         >
-          <span className="material-symbols-outlined" style={{ fontSize: '22px' }}>
+          <span className="material-symbols-outlined" style={{ fontSize: '20px' }}>
             notifications
           </span>
           {notificationsCount > 0 && (
             <span
               style={{
                 position: 'absolute',
-                top: '6px',
-                right: '6px',
+                top: '7px',
+                right: '7px',
                 width: '8px',
                 height: '8px',
-                backgroundColor: '#B23A2E',
+                backgroundColor: '#EF4444',
                 borderRadius: '50%',
-                border: '2px solid #FAFAF7'
+                border: '2px solid #FFFFFF'
               }}
             />
           )}
@@ -190,15 +186,16 @@ export default function TopBar({
               display: 'flex',
               alignItems: 'center',
               gap: '10px',
-              background: 'transparent',
-              border: 'none',
+              background: 'rgba(255, 255, 255, 0.8)',
+              border: '1px solid rgba(226, 232, 240, 0.8)',
               cursor: 'pointer',
-              padding: '4px 8px',
-              borderRadius: '4px',
-              transition: 'background-color 0.15s ease'
+              padding: '5px 12px 5px 6px',
+              borderRadius: '9999px',
+              boxShadow: '0 2px 6px rgba(0,0,0,0.03)',
+              transition: 'all 0.15s ease'
             }}
-            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#F1F1ED')}
-            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#FFFFFF')}
+            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.8)')}
           >
             {user.avatarUrl ? (
               <img
@@ -208,8 +205,7 @@ export default function TopBar({
                   width: '32px',
                   height: '32px',
                   borderRadius: '50%',
-                  objectFit: 'cover',
-                  border: '1px solid #E5E5E1'
+                  objectFit: 'cover'
                 }}
               />
             ) : (
@@ -218,7 +214,7 @@ export default function TopBar({
                   width: '32px',
                   height: '32px',
                   borderRadius: '50%',
-                  backgroundColor: '#26415E',
+                  background: 'linear-gradient(135deg, #0F172A 0%, #334155 100%)',
                   color: '#FFFFFF',
                   display: 'flex',
                   alignItems: 'center',
@@ -235,21 +231,22 @@ export default function TopBar({
               <p
                 className="edu-font-body"
                 style={{
-                  fontSize: '12px',
-                  fontWeight: 700,
-                  color: '#1B2330',
+                  fontSize: '12.5px',
+                  fontWeight: 600,
+                  color: '#0F172A',
                   margin: 0,
                   lineHeight: '1.2'
                 }}
               >
-                {user.name.toUpperCase()}
+                {user.name}
               </p>
               <p
                 style={{
                   fontSize: '10px',
-                  color: '#5F6774',
-                  margin: '2px 0 0 0',
-                  textTransform: 'uppercase'
+                  color: '#64748B',
+                  margin: '1px 0 0 0',
+                  textTransform: 'uppercase',
+                  fontWeight: 500
                 }}
               >
                 {user.role}
@@ -259,7 +256,7 @@ export default function TopBar({
               className="material-symbols-outlined"
               style={{
                 fontSize: '18px',
-                color: '#5F6774',
+                color: '#64748B',
                 transform: isDropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)',
                 transition: 'transform 0.2s ease'
               }}
@@ -274,13 +271,14 @@ export default function TopBar({
               style={{
                 position: 'absolute',
                 right: 0,
-                top: 'calc(100% + 4px)',
-                width: '200px',
-                backgroundColor: '#FFFFFF',
-                border: '1px solid #E5E5E1',
-                borderRadius: '4px',
-                boxShadow: '0 4px 12px rgba(38, 65, 94, 0.08)',
-                padding: '4px 0',
+                top: 'calc(100% + 8px)',
+                width: '210px',
+                backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                backdropFilter: 'blur(16px)',
+                border: '1px solid rgba(226, 232, 240, 0.9)',
+                borderRadius: '14px',
+                boxShadow: '0 12px 30px -5px rgba(0, 0, 0, 0.1)',
+                padding: '6px',
                 zIndex: 100
               }}
             >
@@ -293,16 +291,18 @@ export default function TopBar({
                     alignItems: 'center',
                     gap: '10px',
                     width: '100%',
-                    padding: '10px 16px',
+                    padding: '9px 14px',
                     background: 'transparent',
                     border: 'none',
+                    borderRadius: '8px',
                     textAlign: 'left',
                     fontSize: '13px',
-                    color: item.id === 'logout' ? '#B23A2E' : '#1B2330',
+                    fontWeight: 500,
+                    color: item.id === 'logout' ? '#EF4444' : '#1E293B',
                     cursor: 'pointer',
                     transition: 'background-color 0.15s ease'
                   }}
-                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#F1F1ED')}
+                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = item.id === 'logout' ? '#FEE2E2' : '#F1F5F9')}
                   onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
                 >
                   {item.icon && (
@@ -320,3 +320,4 @@ export default function TopBar({
     </header>
   );
 }
+
