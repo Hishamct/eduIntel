@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Sidebar, TopBar, KpiCard, DataTable, StatusBadge, GradingInput } from "../../components/ui";
+import { Sidebar, TopBar, DataTable, StatusBadge, GradingInput } from "../../components/ui";
 import { examEntryData } from "../../data/teacherMockData";
 import { logout } from "../../api/auth";
 
@@ -50,61 +50,104 @@ export default function ExamResults() {
           : item
       )
     );
+    setSelectedStudent((prev) =>
+      prev ? {
+        ...prev,
+        examScore: numScore,
+        gradeLetter,
+        statusVariant,
+        statusLabel,
+        observations: feedback
+      } : null
+    );
     alert(`Exam result saved for ${selectedStudent.studentName}!`);
   };
+
+  const filteredScores = examScores.filter((row) =>
+    selectedSubject === "ALL" || row.subject.toLowerCase() === selectedSubject.toLowerCase()
+  );
 
   const columns = [
     {
       key: "studentName",
-      label: "Student Name",
+      label: "Student",
       sortable: true,
       render: (row) => (
         <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
           <div
             style={{
-              width: "30px",
-              height: "30px",
+              width: "32px",
+              height: "32px",
               borderRadius: "50%",
-              backgroundColor: "rgba(38, 65, 94, 0.1)",
-              color: "#26415E",
+              background: "linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(14, 165, 233, 0.15))",
+              color: "#059669",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
               fontWeight: 700,
               fontSize: "12px",
-              fontFamily: "var(--font-heading)"
+              border: "1px solid rgba(16, 185, 129, 0.3)"
             }}
           >
             {row.avatarInitials}
           </div>
           <div>
-            <span style={{ fontWeight: 600, color: "#1B2330" }}>{row.studentName}</span>
-            <span style={{ fontSize: "11px", color: "#5F6774", display: "block" }}>{row.id}</span>
+            <div style={{ fontWeight: 600, color: "#0F172A", fontSize: "13px" }}>{row.studentName}</div>
+            <div style={{ fontSize: "11px", color: "#64748B" }}>{row.id}</div>
           </div>
         </div>
       )
     },
-    { key: "classSection", label: "Class", sortable: true },
-    { key: "subject", label: "Subject", sortable: true },
+    { 
+      key: "classSection", 
+      label: "Class Cohort", 
+      sortable: true,
+      render: (row) => <span style={{ fontWeight: 600, color: "#334155" }}>{row.classSection}</span>
+    },
+    { 
+      key: "subject", 
+      label: "Subject", 
+      sortable: true,
+      render: (row) => (
+        <span style={{ fontSize: "12px", color: "#475569" }}>{row.subject}</span>
+      )
+    },
     {
       key: "examScore",
-      label: "Score",
+      label: "Marks Scored",
       sortable: true,
-      render: (row) => <strong>{row.examScore} / {row.maxScore}</strong>
+      render: (row) => (
+        <span style={{ fontWeight: 700, color: "#0F172A" }}>
+          {row.examScore} <span style={{ color: "#94A3B8", fontWeight: 500 }}>/ {row.maxScore}</span>
+        </span>
+      )
     },
     {
       key: "gradeLetter",
       label: "Grade",
       sortable: true,
-      render: (row) => (
-        <span style={{ fontWeight: 700, color: row.statusVariant === "flagged-at-risk" ? "#B23A2E" : "#26415E" }}>
-          {row.gradeLetter}
-        </span>
-      )
+      render: (row) => {
+        const isF = row.gradeLetter === "F";
+        const isA = row.gradeLetter.includes("A");
+        return (
+          <span style={{
+            display: "inline-block",
+            padding: "3px 8px",
+            borderRadius: "6px",
+            fontSize: "11px",
+            fontWeight: 800,
+            background: isF ? "rgba(239, 68, 68, 0.12)" : isA ? "rgba(16, 185, 129, 0.12)" : "rgba(245, 158, 11, 0.12)",
+            color: isF ? "#DC2626" : isA ? "#065F46" : "#B45309",
+            border: `1px solid ${isF ? "rgba(239, 68, 68, 0.25)" : isA ? "rgba(16, 185, 129, 0.25)" : "rgba(245, 158, 11, 0.25)"}`
+          }}>
+            {row.gradeLetter}
+          </span>
+        );
+      }
     },
     {
       key: "status",
-      label: "Status",
+      label: "Result Status",
       sortable: true,
       render: (row) => (
         <StatusBadge
@@ -115,18 +158,26 @@ export default function ExamResults() {
     },
     {
       key: "actions",
-      label: "Actions",
+      label: "Action",
       sortable: false,
       render: (row) => (
-        <div style={{ textAlign: "right" }}>
-          <button
-            onClick={() => setSelectedStudent(row)}
-            className="edu-btn-secondary"
-            style={{ padding: "4px 10px", fontSize: "11px" }}
-          >
-            Edit Score
-          </button>
-        </div>
+        <button
+          onClick={() => setSelectedStudent(row)}
+          style={{
+            padding: "5px 12px",
+            borderRadius: "8px",
+            fontSize: "12px",
+            fontWeight: 600,
+            background: selectedStudent?.id === row.id ? "#10B981" : "rgba(241, 245, 249, 0.9)",
+            color: selectedStudent?.id === row.id ? "#FFFFFF" : "#1E293B",
+            border: "none",
+            cursor: "pointer",
+            transition: "all 0.15s ease",
+            boxShadow: selectedStudent?.id === row.id ? "0 2px 8px rgba(16, 185, 129, 0.25)" : "none"
+          }}
+        >
+          {selectedStudent?.id === row.id ? "Editing" : "Modify Mark"}
+        </button>
       )
     }
   ];
@@ -137,7 +188,7 @@ export default function ExamResults() {
         userRole="teacher"
         activeId="exams"
         logoText="EduIntel AI"
-        roleText="Teacher Portal"
+        roleText="Faculty Portal"
         isCollapsed={isSidebarCollapsed}
         onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
         onSelect={(itemId) => {
@@ -147,7 +198,7 @@ export default function ExamResults() {
 
       <div className="edu-main-wrapper">
         <TopBar
-          user={{ name: "Faculty Portal", role: "Educator" }}
+          user={{ name: "Dr. Sarah Jenkins", role: "Faculty Head" }}
           onProfileMenuSelect={handleProfileSelect}
         />
 
@@ -157,129 +208,165 @@ export default function ExamResults() {
             style={{
               display: "flex",
               justifyContent: "space-between",
-              alignItems: "flex-end",
-              marginBottom: "24px",
+              alignItems: "flex-start",
+              marginBottom: "28px",
               flexWrap: "wrap",
-              gap: "12px"
+              gap: "16px"
             }}
           >
             <div>
-              <span
-                style={{
-                  fontSize: "11px",
-                  fontWeight: 700,
-                  letterSpacing: "0.05em",
-                  color: "#5F6774",
-                  textTransform: "uppercase"
-                }}
-              >
-                ASSESSMENT REGISTRY
-              </span>
-              <h2
+              <div style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "4px 10px", borderRadius: "9999px", background: "rgba(16, 185, 129, 0.1)", border: "1px solid rgba(16, 185, 129, 0.2)", marginBottom: "8px" }}>
+                <span className="material-symbols-outlined" style={{ fontSize: "14px", color: "#059669" }}>grade</span>
+                <span style={{ fontSize: "11px", fontWeight: 700, color: "#059669", letterSpacing: "0.06em", textTransform: "uppercase" }}>
+                  Assessment Registry
+                </span>
+              </div>
+              <h1
                 className="edu-font-heading"
-                style={{ fontSize: "24px", fontWeight: 600, color: "#1B2330", margin: "4px 0 0 0" }}
+                style={{ fontSize: "28px", fontWeight: 700, color: "#0F172A", margin: "0 0 6px 0", letterSpacing: "-0.02em" }}
               >
-                Exam Result Entry & Analysis
-              </h2>
-              <p style={{ fontSize: "14px", color: "#5F6774", margin: "4px 0 0 0" }}>
-                Input subject scores, record teacher observations, and review class grade distributions.
+                Exam Results & Assessment Registry
+              </h1>
+              <p style={{ fontSize: "14px", color: "#64748B", margin: 0, maxWidth: "600px" }}>
+                Input examination scores, record teacher observations, and review class grade percentiles.
               </p>
             </div>
 
-            <div style={{ display: "flex", gap: "12px" }}>
-              <button className="edu-btn-secondary" style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                <span className="material-symbols-outlined" style={{ fontSize: "16px" }}>download</span>
-                EXPORT MARKSHEET
+            <div style={{ display: "flex", gap: "10px" }}>
+              <button 
+                onClick={() => alert("Mark sheet exported as audit PDF.")}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  padding: "9px 16px",
+                  borderRadius: "10px",
+                  fontSize: "13px",
+                  fontWeight: 600,
+                  background: "rgba(255, 255, 255, 0.8)",
+                  border: "1px solid rgba(226, 232, 240, 0.9)",
+                  color: "#1E293B",
+                  cursor: "pointer",
+                  backdropFilter: "blur(12px)"
+                }}
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: "18px", color: "#64748B" }}>download</span>
+                Export Marksheet
               </button>
             </div>
           </div>
 
           {/* Top KPI Cards */}
-          <div className="edu-kpi-grid" style={{ marginBottom: "24px" }}>
-            <KpiCard
-              title="Class Average Marks"
-              value="74.4 / 100"
-              trend="+2.1%"
-              trendDirection="up"
-              progressPercent={74}
-              progressColor="#26415E"
-            />
-            <KpiCard
-              title="Exam Pass Rate"
-              value="85.0%"
-              trend="2 Re-tests Required"
-              trendDirection="down"
-              progressPercent={85}
-              progressColor="#3C8C5D"
-            />
-            <KpiCard
-              title="Top Grade (A/A+)"
-              value="12 Students"
-              trend="Highest Score: 96"
-              trendDirection="up"
-              progressPercent={60}
-              progressColor="#C97A2B"
-            />
-          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "16px", marginBottom: "28px" }}>
+            <div className="edu-card" style={{ padding: "20px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "8px" }}>
+                <span style={{ fontSize: "12px", fontWeight: 600, color: "#64748B" }}>Class Average Marks</span>
+                <span className="material-symbols-outlined" style={{ fontSize: "20px", color: "#10B981" }}>score</span>
+              </div>
+              <div style={{ fontSize: "24px", fontWeight: 700, color: "#0F172A", marginBottom: "4px" }}>
+                74.4 / 100
+              </div>
+              <div style={{ fontSize: "12px", color: "#059669", display: "flex", alignItems: "center", gap: "4px" }}>
+                <span className="material-symbols-outlined" style={{ fontSize: "14px" }}>trending_up</span>
+                +2.1% vs term benchmark
+              </div>
+            </div>
 
-          {/* Filter Strip */}
-          <div
-            className="edu-card"
-            style={{
-              padding: "16px 20px",
-              marginBottom: "24px",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              flexWrap: "wrap",
-              gap: "16px"
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-              <label style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.05em", color: "#5F6774", textTransform: "uppercase" }}>
-                Subject
-              </label>
-              <select
-                value={selectedSubject}
-                onChange={(e) => setSelectedSubject(e.target.value)}
-                style={{
-                  padding: "6px 12px",
-                  borderRadius: "4px",
-                  border: "1px solid #E5E5E1",
-                  backgroundColor: "#F4F4F1",
-                  fontSize: "13px",
-                  color: "#1B2330",
-                  outline: "none"
-                }}
-              >
-                <option value="Mathematics II">Mathematics II</option>
-                <option value="Physics Lab">Physics Lab</option>
-                <option value="Computer Science">Computer Science</option>
-              </select>
+            <div className="edu-card" style={{ padding: "20px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "8px" }}>
+                <span style={{ fontSize: "12px", fontWeight: 600, color: "#64748B" }}>Exam Pass Rate</span>
+                <span className="material-symbols-outlined" style={{ fontSize: "20px", color: "#0284C7" }}>verified</span>
+              </div>
+              <div style={{ fontSize: "24px", fontWeight: 700, color: "#0F172A", marginBottom: "4px" }}>
+                85.0%
+              </div>
+              <div style={{ fontSize: "12px", color: "#D97706" }}>2 re-tests required</div>
+            </div>
+
+            <div className="edu-card" style={{ padding: "20px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "8px" }}>
+                <span style={{ fontSize: "12px", fontWeight: 600, color: "#64748B" }}>Top Distinction (A/A+)</span>
+                <span className="material-symbols-outlined" style={{ fontSize: "20px", color: "#8B5CF6" }}>workspace_premium</span>
+              </div>
+              <div style={{ fontSize: "24px", fontWeight: 700, color: "#0F172A", marginBottom: "4px" }}>
+                12 Students
+              </div>
+              <div style={{ fontSize: "12px", color: "#059669" }}>Highest recorded: 96/100</div>
+            </div>
+
+            <div className="edu-card" style={{ padding: "20px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "8px" }}>
+                <span style={{ fontSize: "12px", fontWeight: 600, color: "#64748B" }}>Remedial Priority</span>
+                <span className="material-symbols-outlined" style={{ fontSize: "20px", color: "#EF4444" }}>warning</span>
+              </div>
+              <div style={{ fontSize: "24px", fontWeight: 700, color: "#0F172A", marginBottom: "4px" }}>
+                3 Students
+              </div>
+              <div style={{ fontSize: "12px", color: "#DC2626" }}>Scheduled for tutorials</div>
             </div>
           </div>
 
-          {/* Table & Grading Component */}
+          {/* Subject Filter Pills */}
+          <div style={{ display: "flex", gap: "8px", overflowX: "auto", paddingBottom: "4px", marginBottom: "20px" }}>
+            {["Mathematics II", "Physics Lab", "Computer Science", "ALL"].map((subj) => (
+              <button
+                key={subj}
+                onClick={() => setSelectedSubject(subj)}
+                style={{
+                  padding: "8px 16px",
+                  borderRadius: "9999px",
+                  fontSize: "12px",
+                  fontWeight: 600,
+                  border: "none",
+                  cursor: "pointer",
+                  transition: "all 0.2s ease",
+                  backgroundColor: selectedSubject.toLowerCase() === subj.toLowerCase() ? "#10B981" : "rgba(255, 255, 255, 0.75)",
+                  color: selectedSubject.toLowerCase() === subj.toLowerCase() ? "#FFFFFF" : "#475569",
+                  boxShadow: selectedSubject.toLowerCase() === subj.toLowerCase() ? "0 4px 12px rgba(16, 185, 129, 0.3)" : "0 1px 3px rgba(0,0,0,0.05)",
+                }}
+              >
+                {subj === "ALL" ? "All Subjects" : subj}
+              </button>
+            ))}
+          </div>
+
+          {/* Table & Mark Editor Component */}
           <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
             <DataTable
-              title={`Exam Marks Registry: ${selectedSubject}`}
+              title={`Exam Marks Registry: ${selectedSubject} (${filteredScores.length})`}
               columns={columns}
-              data={examScores}
+              data={filteredScores}
               pageSize={10}
             />
 
             {selectedStudent && (
-              <GradingInput
-                studentName={selectedStudent.studentName}
-                studentInitials={selectedStudent.avatarInitials}
-                assignmentTitle={`${selectedStudent.subject} Final Exam`}
-                submissionNote={`Grade Assigned: ${selectedStudent.gradeLetter}`}
-                maxScore={selectedStudent.maxScore}
-                initialScore={selectedStudent.examScore}
-                initialFeedback={selectedStudent.observations}
-                onSave={handleSaveGrade}
-                onDiscard={() => setSelectedStudent(null)}
-              />
+              <div className="edu-card" style={{ padding: "26px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "20px" }}>
+                  <div style={{ width: "36px", height: "36px", borderRadius: "10px", background: "rgba(16, 185, 129, 0.12)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <span className="material-symbols-outlined" style={{ fontSize: "20px", color: "#059669" }}>rate_review</span>
+                  </div>
+                  <div>
+                    <h3 className="edu-font-heading" style={{ margin: 0, fontSize: "17px", fontWeight: 700, color: "#0F172A" }}>
+                      Update Marks & Pedagogical Feedback
+                    </h3>
+                    <p style={{ margin: 0, fontSize: "12px", color: "#64748B" }}>
+                      Modifying score record for <strong>{selectedStudent.studentName}</strong> ({selectedStudent.id})
+                    </p>
+                  </div>
+                </div>
+
+                <GradingInput
+                  studentName={selectedStudent.studentName}
+                  studentInitials={selectedStudent.avatarInitials}
+                  assignmentTitle={`${selectedStudent.subject} Final Exam`}
+                  submissionNote={`Recorded Grade: ${selectedStudent.gradeLetter} • Current Score: ${selectedStudent.examScore}`}
+                  maxScore={selectedStudent.maxScore}
+                  initialScore={selectedStudent.examScore}
+                  initialFeedback={selectedStudent.observations}
+                  onSave={handleSaveGrade}
+                  onDiscard={() => setSelectedStudent(null)}
+                />
+              </div>
             )}
           </div>
         </main>
