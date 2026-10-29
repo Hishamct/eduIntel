@@ -21,7 +21,7 @@ export default function AcademicAnalysis() {
       key: "avgGpa",
       label: "Average GPA",
       sortable: true,
-      render: (row) => <strong>{row.avgGpa.toFixed(2)}</strong>
+      render: (row) => <strong style={{ color: "#0F172A", fontSize: "14px" }}>{row.avgGpa.toFixed(2)}</strong>
     },
     { key: "passRate", label: "Pass Rate", sortable: true },
     {
@@ -42,7 +42,7 @@ export default function AcademicAnalysis() {
       <Sidebar
         userRole="admin"
         activeId="analysis"
-        logoText="EduIntel AI"
+        logoText="eduIntel"
         roleText="Administrator Portal"
         isCollapsed={isSidebarCollapsed}
         onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
@@ -53,7 +53,7 @@ export default function AcademicAnalysis() {
 
       <div className="edu-main-wrapper">
         <TopBar
-          user={{ name: "Dr. Aria Vance", role: "Super Admin" }}
+          user={{ name: "Dr. Sarah Evans", role: "Super Admin" }}
           onProfileMenuSelect={handleProfileSelect}
         />
 
@@ -63,56 +63,51 @@ export default function AcademicAnalysis() {
             style={{
               display: "flex",
               justifyContent: "space-between",
-              alignItems: "flex-end",
-              marginBottom: "24px",
+              alignItems: "flex-start",
+              marginBottom: "28px",
               flexWrap: "wrap",
-              gap: "12px"
+              gap: "16px"
             }}
           >
             <div>
-              <span
-                style={{
-                  fontSize: "11px",
-                  fontWeight: 700,
-                  letterSpacing: "0.05em",
-                  color: "#5F6774",
-                  textTransform: "uppercase"
-                }}
-              >
-                INSTITUTIONAL METRICS
-              </span>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
+                <span style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.06em", color: "#059669", textTransform: "uppercase", backgroundColor: "#DCFCE7", padding: "3px 10px", borderRadius: "9999px" }}>
+                  INSTITUTIONAL METRICS
+                </span>
+                <span style={{ fontSize: "12px", color: "#64748B" }}>• Academic Year 2024</span>
+              </div>
               <h2
                 className="edu-font-heading"
-                style={{ fontSize: "24px", fontWeight: 600, color: "#1B2330", margin: "4px 0 0 0" }}
+                style={{ fontSize: "28px", fontWeight: 700, color: "#0F172A", margin: "4px 0 0 0", letterSpacing: "-0.02em" }}
               >
-                Academic Analysis
+                Academic Analysis & Cohort Trends
               </h2>
-              <p style={{ fontSize: "14px", color: "#5F6774", margin: "4px 0 0 0" }}>
-                Cross-departmental performance metrics and student status monitoring.
+              <p style={{ fontSize: "14px", color: "#64748B", margin: "4px 0 0 0" }}>
+                Cross-departmental performance metrics, GPA distributions, and cohort pass rates.
               </p>
             </div>
 
             <div style={{ display: "flex", gap: "12px" }}>
               <button className="edu-btn-secondary" style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                <span className="material-symbols-outlined" style={{ fontSize: "16px" }}>file_download</span>
-                EXPORT PDF
+                <span className="material-symbols-outlined" style={{ fontSize: "18px" }}>file_download</span>
+                Export Report
               </button>
-              <button className="edu-btn-primary" style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                <span className="material-symbols-outlined" style={{ fontSize: "16px" }}>filter_list</span>
-                FILTER DATA
+              <button className="edu-btn-accent" style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <span className="material-symbols-outlined" style={{ fontSize: "18px" }}>filter_list</span>
+                Filter Cohorts
               </button>
             </div>
           </div>
 
           {/* Top KPI Metrics Row */}
-          <div className="edu-kpi-grid" style={{ marginBottom: "24px" }}>
+          <div className="edu-kpi-grid" style={{ marginBottom: "28px" }}>
             <KpiCard
               title="Average GPA"
               value={academicAnalysisKpis.averageGpa}
               trend={academicAnalysisKpis.gpaTrend}
               trendDirection="up"
               progressPercent={95}
-              progressColor="#26415E"
+              progressColor="#10B981"
             />
             <KpiCard
               title="Pass Rate"
@@ -120,7 +115,7 @@ export default function AcademicAnalysis() {
               trend={academicAnalysisKpis.passRateTrend}
               trendDirection="up"
               progressPercent={94}
-              progressColor="#3C8C5D"
+              progressColor="#06B6D4"
             />
             <KpiCard
               title="Improvement Rate"
@@ -128,7 +123,7 @@ export default function AcademicAnalysis() {
               trend={academicAnalysisKpis.improvementTrend}
               trendDirection="up"
               progressPercent={60}
-              progressColor="#C97A2B"
+              progressColor="#8B5CF6"
             />
           </div>
 
@@ -137,59 +132,59 @@ export default function AcademicAnalysis() {
             style={{
               display: "grid",
               gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 480px), 1fr))",
-              gap: "20px",
-              marginBottom: "24px"
+              gap: "24px",
+              marginBottom: "28px"
             }}
           >
             {/* Score Trend Visual Card */}
-            <div className="edu-card" style={{ padding: "20px", display: "flex", flexDirection: "column" }}>
+            <div className="edu-card" style={{ padding: "24px", display: "flex", flexDirection: "column" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-                <h4 className="edu-font-heading" style={{ margin: 0, fontSize: "16px", color: "#1B2330" }}>
-                  Average Score Trend
+                <h4 className="edu-font-heading" style={{ margin: 0, fontSize: "17px", fontWeight: 700, color: "#0F172A" }}>
+                  Semester Score Progression Trend
                 </h4>
-                <span style={{ fontSize: "11px", color: "#5F6774", fontWeight: 700, textTransform: "uppercase" }}>
-                  OVERALL MEAN
+                <span style={{ fontSize: "11px", color: "#15803D", backgroundColor: "#DCFCE7", padding: "2px 8px", borderRadius: "9999px", fontWeight: 700, textTransform: "uppercase" }}>
+                  +8.4% OVERALL
                 </span>
               </div>
-              <div style={{ height: "180px", display: "flex", alignItems: "flex-end", gap: "16px", padding: "12px 0" }}>
-                <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", height: "100%", justifyContent: "flex-end" }}>
-                  <div style={{ width: "100%", backgroundColor: "rgba(38, 65, 94, 0.2)", height: "65%", borderRadius: "2px" }} />
-                  <span style={{ fontSize: "11px", color: "#5F6774", marginTop: "6px" }}>Sem 1</span>
-                </div>
-                <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", height: "100%", justifyContent: "flex-end" }}>
-                  <div style={{ width: "100%", backgroundColor: "rgba(38, 65, 94, 0.3)", height: "70%", borderRadius: "2px" }} />
-                  <span style={{ fontSize: "11px", color: "#5F6774", marginTop: "6px" }}>Sem 2</span>
-                </div>
-                <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", height: "100%", justifyContent: "flex-end" }}>
-                  <div style={{ width: "100%", backgroundColor: "rgba(38, 65, 94, 0.5)", height: "78%", borderRadius: "2px" }} />
-                  <span style={{ fontSize: "11px", color: "#5F6774", marginTop: "6px" }}>Sem 3</span>
-                </div>
-                <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", height: "100%", justifyContent: "flex-end" }}>
-                  <div style={{ width: "100%", backgroundColor: "#26415E", height: "92%", borderRadius: "2px" }} />
-                  <span style={{ fontSize: "11px", color: "#26415E", fontWeight: 700, marginTop: "6px" }}>Sem 4</span>
-                </div>
+              <div style={{ height: "180px", display: "flex", alignItems: "flex-end", gap: "20px", padding: "12px 12px 0" }}>
+                {[
+                  { sem: "Sem 1", height: "65%", val: "68%", color: "rgba(16, 185, 129, 0.3)" },
+                  { sem: "Sem 2", height: "72%", val: "72%", color: "rgba(16, 185, 129, 0.5)" },
+                  { sem: "Sem 3", height: "82%", val: "81%", color: "rgba(16, 185, 129, 0.75)" },
+                  { sem: "Sem 4", height: "94%", val: "89%", color: "#10B981" },
+                ].map((item, idx) => (
+                  <div key={idx} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", height: "100%", justifyContent: "flex-end" }}>
+                    <span style={{ fontSize: "11px", fontWeight: 700, color: "#0F172A", marginBottom: "6px" }}>{item.val}</span>
+                    <div style={{ width: "100%", backgroundColor: item.color, height: item.height, borderRadius: "8px 8px 0 0", transition: "height 0.4s ease" }} />
+                    <span style={{ fontSize: "12px", color: "#64748B", marginTop: "8px", fontWeight: 500 }}>{item.sem}</span>
+                  </div>
+                ))}
               </div>
             </div>
 
             {/* Department Comparison Card */}
-            <div className="edu-card" style={{ padding: "20px", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+            <div className="edu-card" style={{ padding: "24px", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
               <div>
-                <h4 className="edu-font-heading" style={{ margin: "0 0 12px 0", fontSize: "16px", color: "#1B2330" }}>
+                <h4 className="edu-font-heading" style={{ margin: "0 0 8px 0", fontSize: "17px", fontWeight: 700, color: "#0F172A" }}>
                   Cohort Distribution Summary
                 </h4>
-                <p style={{ fontSize: "13px", color: "#5F6774", margin: 0 }}>
-                  STEM fields show high engagement with 95.1% pass rates. Humanities and Computer Applications maintain consistent grade point averages above 3.80.
+                <p style={{ fontSize: "13.5px", color: "#64748B", margin: 0, lineHeight: 1.5 }}>
+                  Computer Science & AI lead student engagement with a <strong>95.1% pass rate</strong>. Behavioral Science and Mathematics maintain consistent GPA averages above 3.80.
                 </p>
               </div>
 
-              <div style={{ marginTop: "20px", paddingTop: "16px", borderTop: "1px solid #E5E5E1", display: "flex", justifyContent: "space-around" }}>
+              <div style={{ marginTop: "24px", paddingTop: "18px", borderTop: "1px solid #E2E8F0", display: "flex", justifyContent: "space-around" }}>
                 <div style={{ textAlign: "center" }}>
-                  <span style={{ fontSize: "20px", fontWeight: 700, color: "#26415E" }}>1,435</span>
-                  <p style={{ fontSize: "11px", color: "#5F6774", margin: "2px 0 0 0", textTransform: "uppercase" }}>Total Evaluated</p>
+                  <span style={{ fontSize: "24px", fontWeight: 700, color: "#0F172A" }}>1,435</span>
+                  <p style={{ fontSize: "11px", color: "#64748B", margin: "2px 0 0 0", textTransform: "uppercase", fontWeight: 600 }}>Total Evaluated</p>
                 </div>
                 <div style={{ textAlign: "center" }}>
-                  <span style={{ fontSize: "20px", fontWeight: 700, color: "#3C8C5D" }}>5</span>
-                  <p style={{ fontSize: "11px", color: "#5F6774", margin: "2px 0 0 0", textTransform: "uppercase" }}>Active Schools</p>
+                  <span style={{ fontSize: "24px", fontWeight: 700, color: "#10B981" }}>5</span>
+                  <p style={{ fontSize: "11px", color: "#64748B", margin: "2px 0 0 0", textTransform: "uppercase", fontWeight: 600 }}>Active Schools</p>
+                </div>
+                <div style={{ textAlign: "center" }}>
+                  <span style={{ fontSize: "24px", fontWeight: 700, color: "#0284C7" }}>98.2%</span>
+                  <p style={{ fontSize: "11px", color: "#64748B", margin: "2px 0 0 0", textTransform: "uppercase", fontWeight: 600 }}>Data Accuracy</p>
                 </div>
               </div>
             </div>
@@ -197,7 +192,7 @@ export default function AcademicAnalysis() {
 
           {/* Department Breakdown Table */}
           <DataTable
-            title="Departmental Performance Registry"
+            title="Departmental Academic Performance Registry"
             columns={columns}
             data={departmentBreakdownData}
             pageSize={5}
@@ -207,3 +202,4 @@ export default function AcademicAnalysis() {
     </div>
   );
 }
+

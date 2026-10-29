@@ -30,24 +30,24 @@ export default function RiskAlerts() {
         <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
           <div
             style={{
-              width: "32px",
-              height: "32px",
-              borderRadius: "50%",
-              backgroundColor: row.statusVariant === "flagged-at-risk" ? "rgba(178, 58, 46, 0.1)" : "rgba(217, 146, 46, 0.1)",
-              color: row.statusVariant === "flagged-at-risk" ? "#B23A2E" : "#D9922E",
+              width: "36px",
+              height: "36px",
+              borderRadius: "10px",
+              backgroundColor: row.statusVariant === "flagged-at-risk" ? "#FEE2E2" : "#FEF3C7",
+              color: row.statusVariant === "flagged-at-risk" ? "#B91C1C" : "#B45309",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
               fontWeight: 700,
-              fontSize: "12px",
+              fontSize: "12.5px",
               fontFamily: "var(--font-heading)"
             }}
           >
             {row.avatarInitials}
           </div>
           <div>
-            <span style={{ fontWeight: 600, color: "#1B2330", display: "block" }}>{row.name}</span>
-            <span style={{ fontSize: "11px", color: "#5F6774" }}>{row.department}</span>
+            <span style={{ fontWeight: 600, color: "#0F172A", display: "block" }}>{row.name}</span>
+            <span style={{ fontSize: "11.5px", color: "#64748B" }}>{row.department}</span>
           </div>
         </div>
       )
@@ -55,7 +55,7 @@ export default function RiskAlerts() {
     { key: "id", label: "ID", sortable: true },
     {
       key: "status",
-      label: "Status Badge",
+      label: "Risk Level",
       sortable: true,
       render: (row) => (
         <StatusBadge
@@ -70,7 +70,7 @@ export default function RiskAlerts() {
       label: "Days Since Flagged",
       sortable: true,
       render: (row) => (
-        <span style={{ color: row.statusVariant === "flagged-at-risk" ? "#B23A2E" : "#D9922E", fontWeight: 600 }}>
+        <span style={{ color: row.statusVariant === "flagged-at-risk" ? "#EF4444" : "#D97706", fontWeight: 700 }}>
           {row.daysFlagged}
         </span>
       )
@@ -84,9 +84,9 @@ export default function RiskAlerts() {
           <button
             onClick={() => handleViewProfile(row)}
             className="edu-btn-secondary"
-            style={{ padding: "4px 10px", fontSize: "11px" }}
+            style={{ padding: "6px 12px", fontSize: "12px", borderRadius: "8px" }}
           >
-            View Profile
+            Inspect Alert
           </button>
         </div>
       )
@@ -98,7 +98,7 @@ export default function RiskAlerts() {
       <Sidebar
         userRole="admin"
         activeId="alerts"
-        logoText="EduIntel AI"
+        logoText="eduIntel"
         roleText="Administrator Portal"
         isCollapsed={isSidebarCollapsed}
         onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
@@ -109,7 +109,7 @@ export default function RiskAlerts() {
 
       <div className="edu-main-wrapper">
         <TopBar
-          user={{ name: "Dr. Aria Vance", role: "Super Admin" }}
+          user={{ name: "Dr. Sarah Evans", role: "Super Admin" }}
           onProfileMenuSelect={handleProfileSelect}
         />
 
@@ -119,56 +119,51 @@ export default function RiskAlerts() {
             style={{
               display: "flex",
               justifyContent: "space-between",
-              alignItems: "flex-end",
-              marginBottom: "24px",
+              alignItems: "flex-start",
+              marginBottom: "28px",
               flexWrap: "wrap",
-              gap: "12px"
+              gap: "16px"
             }}
           >
             <div>
-              <span
-                style={{
-                  fontSize: "11px",
-                  fontWeight: 700,
-                  letterSpacing: "0.05em",
-                  color: "#5F6774",
-                  textTransform: "uppercase"
-                }}
-              >
-                EARLY INTERVENTION SYSTEM
-              </span>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
+                <span style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.06em", color: "#B91C1C", textTransform: "uppercase", backgroundColor: "#FEE2E2", padding: "3px 10px", borderRadius: "9999px" }}>
+                  EARLY INTERVENTION SYSTEM
+                </span>
+                <span style={{ fontSize: "12px", color: "#64748B" }}>• Real-time Anomaly Tracking</span>
+              </div>
               <h2
                 className="edu-font-heading"
-                style={{ fontSize: "24px", fontWeight: 600, color: "#1B2330", margin: "4px 0 0 0" }}
+                style={{ fontSize: "28px", fontWeight: 700, color: "#0F172A", margin: "4px 0 0 0", letterSpacing: "-0.02em" }}
               >
-                Risk Alerts
+                Risk Alerts & Violations
               </h2>
-              <p style={{ fontSize: "14px", color: "#5F6774", margin: "4px 0 0 0" }}>
-                Identify and manage students requiring immediate academic or attendance intervention.
+              <p style={{ fontSize: "14px", color: "#64748B", margin: "4px 0 0 0" }}>
+                Identify and manage students requiring immediate academic intervention, exam review, or attendance support.
               </p>
             </div>
 
             <div style={{ display: "flex", gap: "12px" }}>
               <button className="edu-btn-secondary" style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                <span className="material-symbols-outlined" style={{ fontSize: "16px" }}>filter_list</span>
+                <span className="material-symbols-outlined" style={{ fontSize: "18px" }}>filter_list</span>
                 Filter Controls
               </button>
               <button className="edu-btn-accent" style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                <span className="material-symbols-outlined" style={{ fontSize: "16px" }}>add</span>
+                <span className="material-symbols-outlined" style={{ fontSize: "18px" }}>add</span>
                 New Intervention
               </button>
             </div>
           </div>
 
           {/* KPI Stat Cards Row */}
-          <div className="edu-kpi-grid" style={{ marginBottom: "24px" }}>
+          <div className="edu-kpi-grid" style={{ marginBottom: "28px" }}>
             <KpiCard
               title="At-Risk Students"
               value={riskAlertsKpis.atRiskCount}
               trend={riskAlertsKpis.atRiskTrend}
               trendDirection="down"
               progressPercent={75}
-              progressColor="#B23A2E"
+              progressColor="#EF4444"
             />
             <KpiCard
               title="Needs Attention"
@@ -176,7 +171,7 @@ export default function RiskAlerts() {
               trend={riskAlertsKpis.needsAttentionTrend}
               trendDirection="up"
               progressPercent={45}
-              progressColor="#D9922E"
+              progressColor="#F59E0B"
             />
             <KpiCard
               title="Resolution Rate"
@@ -184,7 +179,7 @@ export default function RiskAlerts() {
               trend={riskAlertsKpis.resolutionAvgDays}
               trendDirection="up"
               progressPercent={88}
-              progressColor="#3C8C5D"
+              progressColor="#10B981"
             />
             <KpiCard
               title="Pending Actions"
@@ -192,18 +187,18 @@ export default function RiskAlerts() {
               trend="Counselor Assigned"
               trendDirection="up"
               progressPercent={60}
-              progressColor="#26415E"
+              progressColor="#06B6D4"
             />
           </div>
 
           {/* Intervention Queue Table */}
           <DataTable
-            title="Intervention Queue"
+            title="Active Intervention Queue"
             columns={columns}
             data={riskAlertsQueueData}
             pageSize={10}
             actions={
-              <button className="edu-btn-secondary" style={{ padding: "6px 12px", fontSize: "12px", display: "flex", alignItems: "center", gap: "4px" }}>
+              <button className="edu-btn-secondary" style={{ padding: "8px 14px", fontSize: "12px", display: "flex", alignItems: "center", gap: "6px" }}>
                 <span className="material-symbols-outlined" style={{ fontSize: "16px" }}>download</span>
                 Export Priority List
               </button>
@@ -232,16 +227,16 @@ export default function RiskAlerts() {
             <div style={{ textAlign: "left" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
                 <div>
-                  <h4 style={{ margin: 0, color: "#1B2330", fontSize: "16px" }}>{selectedStudent.name}</h4>
-                  <p style={{ margin: 0, fontSize: "12px", color: "#5F6774" }}>{selectedStudent.department}</p>
+                  <h4 style={{ margin: 0, color: "#0F172A", fontSize: "16px", fontWeight: 700 }}>{selectedStudent.name}</h4>
+                  <p style={{ margin: 0, fontSize: "12px", color: "#64748B" }}>{selectedStudent.department}</p>
                 </div>
                 <StatusBadge variant={selectedStudent.statusVariant} label={selectedStudent.statusLabel} />
               </div>
-              <div className="edu-card" style={{ padding: "16px", backgroundColor: "#FAFAF7", marginBottom: "16px" }}>
-                <p style={{ fontSize: "11px", fontWeight: 700, color: "#5F6774", textTransform: "uppercase", margin: "0 0 6px 0" }}>Trigger Reason</p>
-                <p style={{ fontSize: "13px", color: "#B23A2E", margin: 0, fontWeight: 500 }}>{selectedStudent.reason}</p>
+              <div className="edu-card" style={{ padding: "16px", backgroundColor: "#F8FAFC", marginBottom: "16px", border: "1px solid #E2E8F0" }}>
+                <p style={{ fontSize: "11px", fontWeight: 700, color: "#64748B", textTransform: "uppercase", margin: "0 0 6px 0" }}>Trigger Reason</p>
+                <p style={{ fontSize: "13px", color: "#B91C1C", margin: 0, fontWeight: 600 }}>{selectedStudent.reason}</p>
               </div>
-              <p style={{ fontSize: "12px", color: "#5F6774", margin: 0 }}>
+              <p style={{ fontSize: "12.5px", color: "#64748B", margin: 0, lineHeight: 1.5 }}>
                 Flagged: <strong>{selectedStudent.daysFlagged}</strong>. Requires academic advisor consultation and parent notification.
               </p>
             </div>
@@ -251,3 +246,4 @@ export default function RiskAlerts() {
     </div>
   );
 }
+
