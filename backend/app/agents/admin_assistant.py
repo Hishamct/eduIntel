@@ -1,9 +1,11 @@
+import re
 import uuid
 from datetime import date
 from typing import TypedDict
 
 from google.genai import types
 from langgraph.graph import END, StateGraph
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.admin.service import (
     get_attendance_stats,
@@ -115,12 +117,126 @@ TOOL_FUNCTIONS = {
 }
 
 
-def _parse_month_arg(args: dict) -> dict:
-    """Converts a 'YYYY-MM' string arg into a date object the service functions expect."""
-    if args.get("month"):
-        year, month = args["month"].split("-")
-        args = {**args, "month": date(int(year), int(month), 1)}
-    return args
+# --- Strict Input Validation Schemas for Admin Reporting Tools ---
+
+DANGEROUS_SQL_PATTERNS = re.compile(
+    r"\b(SELECT|INSERT|UPDATE|DELETE|DROP|ALTER|TRUNCATE|EXEC|EXECUTE|UNION|GRANT|REVOKE|--|;)\b",
+    re.IGNORECASE,
+)
+
+
+class StudentTeacherCountsArgs(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class SalarySummaryArgs(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    month: date | str | None = Field(
+        default=None,
+        description="Optional month in YYYY-MM format, e.g. '2026-08'. Omit for all-time summary.",
+    )
+
+    @field_validator("month")
+    @classmethod
+    def validate_and_convert_month(cls, v: date | str | None) -> date | None:
+        if v is None:
+            return None
+        if isinstance(v, date):
+            return v
+        v = str(v).strip()
+        if not v:
+            return None
+        if DANGEROUS_SQL_PATTERNS.search(v):
+            raise ValueError("SQL tokens and dangerous expressions are not permitted in arguments.")
+        if not re.match(r"^\d{4}-(0[1-9]|1[0-2])$", v):
+            raise ValueError("Month must be in YYYY-MM format with valid month (01-12), e.g. '2026-08'")
+        year, month = v.split("-")
+        return date(int(year), int(month), 1)
+
+
+class TimetableCoverageArgs(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    class_section: str | None = Field(
+        default=None,
+        max_length=20,
+        description="Optional class section filter, e.g. '10-A'.",
+    )
+
+    @field_validator("class_section")
+    @classmethod
+    def validate_class_section(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        v = str(v).strip()
+        if not v:
+            return None
+        if DANGEROUS_SQL_PATTERNS.search(v):
+            raise ValueError("SQL tokens and dangerous expressions are not permitted in arguments.")
+        if not re.match(r"^[A-Za-z0-9\-_ ]{1,20}$", v):
+            raise ValueError("Class section must be alphanumeric (e.g. '10-A') and at most 20 characters.")
+        return v
+
+
+class TeacherGradingPerformanceArgs(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class RevenueSummaryArgs(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    month: date | str | None = Field(
+        default=None,
+        description="Optional month in YYYY-MM format, e.g. '2026-08'. Omit for all-time summary.",
+    )
+
+    @field_validator("month")
+    @classmethod
+    def validate_and_convert_month(cls, v: date | str | None) -> date | None:
+        if v is None:
+            return None
+        if isinstance(v, date):
+            return v
+        v = str(v).strip()
+        if not v:
+            return None
+        if DANGEROUS_SQL_PATTERNS.search(v):
+            raise ValueError("SQL tokens and dangerous expressions are not permitted in arguments.")
+        if not re.match(r"^\d{4}-(0[1-9]|1[0-2])$", v):
+            raise ValueError("Month must be in YYYY-MM format with valid month (01-12), e.g. '2026-08'")
+        year, month = v.split("-")
+        return date(int(year), int(month), 1)
+
+
+class AttendanceStatsArgs(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    class_section: str | None = Field(
+        default=None,
+        max_length=20,
+        description="Optional class section filter, e.g. '10-A'.",
+    )
+
+    @field_validator("class_section")
+    @classmethod
+    def validate_class_section(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        v = str(v).strip()
+        if not v:
+            return None
+        if DANGEROUS_SQL_PATTERNS.search(v):
+            raise ValueError("SQL tokens and dangerous expressions are not permitted in arguments.")
+        if not re.match(r"^[A-Za-z0-9\-_ ]{1,20}$", v):
+            raise ValueError("Class section must be alphanumeric (e.g. '10-A') and at most 20 characters.")
+        return v
+
+
+APPROVED_TOOL_SCHEMAS = {
+    "get_student_teacher_counts": StudentTeacherCountsArgs,
+    "get_salary_summary": SalarySummaryArgs,
+    "get_timetable_coverage": TimetableCoverageArgs,
+    "get_teacher_grading_performance": TeacherGradingPerformanceArgs,
+    "get_revenue_summary": RevenueSummaryArgs,
+    "get_attendance_stats": AttendanceStatsArgs,
+}
 
 
 class AgentState(TypedDict):
@@ -163,15 +279,50 @@ async def execute_tools_node(state: AgentState) -> AgentState:
 
     async with AsyncSessionLocal() as db:
         for call in state["tool_calls"]:
-            func = TOOL_FUNCTIONS.get(call["name"])
-            if not func:
+            tool_name = call.get("name", "")
+            raw_args = call.get("args") or {}
+
+            # 1. Enforce strict tool whitelist — explicitly block arbitrary SQL tools or unapproved calls
+            if tool_name not in TOOL_FUNCTIONS or tool_name not in APPROVED_TOOL_SCHEMAS:
+                tool_results.append({
+                    "name": tool_name,
+                    "result": {
+                        "error": (
+                            f"Tool '{tool_name}' is not authorized. "
+                            "Arbitrary queries and unapproved tools are prohibited."
+                        )
+                    },
+                })
                 continue
-            args = _parse_month_arg(call["args"])
+
+            # 2. Enforce typed Pydantic validation on arguments
+            schema_cls = APPROVED_TOOL_SCHEMAS[tool_name]
             try:
-                result = await func(db=db, **args)
-                tool_results.append({"name": call["name"], "result": result})
-            except Exception as e:
-                tool_results.append({"name": call["name"], "result": {"error": str(e)}})
+                validated_model = schema_cls(**raw_args)
+                clean_args = validated_model.model_dump()
+            except Exception as val_err:
+                tool_results.append({
+                    "name": tool_name,
+                    "result": {
+                        "error": f"Argument validation rejected for '{tool_name}': {val_err}"
+                    },
+                })
+                continue
+
+            # 3. Execute approved reporting tool function
+            func = TOOL_FUNCTIONS[tool_name]
+            try:
+                result = await func(db=db, **clean_args)
+                # 4. Scrub sensitive internal database identifiers from LLM prompt context
+                if isinstance(result, dict) and "pending_teacher_ids" in result:
+                    result = {k: v for k, v in result.items() if k != "pending_teacher_ids"}
+                tool_results.append({"name": tool_name, "result": result})
+            except Exception:
+                # 5. Safe error handling: never leak database credentials, connection strings, or internal tracebacks
+                tool_results.append({
+                    "name": tool_name,
+                    "result": {"error": "Reporting query execution failed safely."},
+                })
 
     return {**state, "tool_results": tool_results}
 

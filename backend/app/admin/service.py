@@ -6,7 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.admin.models import SalaryRecord, Timetable
+from app.admin.models import Attendance, FeeRecord, SalaryRecord, Timetable
 from app.auth.security import hash_password
 from app.student.models import HomeworkSubmission
 from app.users.models import StudentProfile, User
@@ -246,8 +246,6 @@ async def update_student_profile(
     }
 
 
-from app.admin.models import Attendance, FeeRecord
-
 
 async def get_revenue_summary(db: AsyncSession, month: date | None = None) -> dict:
     """Real revenue data from FeeRecord. Filters to a given month if provided."""
@@ -257,6 +255,7 @@ async def get_revenue_summary(db: AsyncSession, month: date | None = None) -> di
             func.extract("year", FeeRecord.due_date) == month.year,
             func.extract("month", FeeRecord.due_date) == month.month,
         )
+    query = query.limit(1000)
     result = await db.execute(query)
     records = result.scalars().all()
 
@@ -280,6 +279,7 @@ async def get_attendance_stats(
     query = select(Attendance)
     if class_section:
         query = query.where(Attendance.class_section == class_section)
+    query = query.limit(5000)
     result = await db.execute(query)
     records = result.scalars().all()
 
@@ -333,6 +333,7 @@ async def get_salary_summary(db: AsyncSession, month: date | None = None) -> dic
             func.extract("year", SalaryRecord.month) == month.year,
             func.extract("month", SalaryRecord.month) == month.month,
         )
+    query = query.limit(1000)
     result = await db.execute(query)
     records = result.scalars().all()
 
@@ -362,6 +363,7 @@ async def get_timetable_coverage(
     query = select(Timetable)
     if class_section:
         query = query.where(Timetable.class_section == class_section)
+    query = query.limit(1000)
     result = await db.execute(query)
     entries = result.scalars().all()
 
@@ -386,6 +388,7 @@ async def get_teacher_grading_performance(db: AsyncSession) -> dict:
         .options(selectinload(HomeworkSubmission.grader))
         .where(HomeworkSubmission.status == "graded")
         .where(HomeworkSubmission.graded_by.isnot(None))
+        .limit(1000)
     )
     graded_submissions = result.scalars().all()
 
