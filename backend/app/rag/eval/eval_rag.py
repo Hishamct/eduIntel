@@ -110,6 +110,7 @@ def call_with_retry(item: dict):
                 query=item["query"],
                 collection_name=item["collection"],
                 n_results=item.get("n_results", 3),
+                institution_id=item.get("institution_id", settings.DEFAULT_INSTITUTION_ID),
             )
         except APIError as e:
             # Gemini-side errors (generate_text tries Gemini first)

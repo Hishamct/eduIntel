@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class CollectionStatus(BaseModel):
@@ -16,6 +16,8 @@ class RagQueryRequest(BaseModel):
     query: str
     collection: str = "study_materials"  # or "portal_help_docs"
     n_results: int = 3
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class RagSource(BaseModel):

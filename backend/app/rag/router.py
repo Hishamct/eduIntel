@@ -1,7 +1,10 @@
-from fastapi import APIRouter, Depends
+import logging
+
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.tenant import get_trusted_tenant_id
 from app.observability.service import log_llm_usage, log_socratic_redirect
 from app.rag.client import get_portal_help_collection, get_study_materials_collection
 from app.rag.schemas import (
@@ -11,8 +14,10 @@ from app.rag.schemas import (
     RagQueryResponse,
 )
 from app.rag.service import debug_query_study_materials, retrieve_and_generate
-from app.users.dependencies import get_current_user
+from app.users.dependencies import get_current_user, require_role
 from app.users.models import User
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/rag", tags=["rag"])
 
@@ -36,18 +41,36 @@ async def query_rag(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    result = retrieve_and_generate(
-        query=payload.query,
-        collection_name=payload.collection,
-        n_results=payload.n_results,
-    )
+    trusted_tenant_id = get_trusted_tenant_id(current_user)
+
+    if payload.collection == "study_materials" and not trusted_tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tenant context required for study materials access",
+        )
+
+    try:
+        result = retrieve_and_generate(
+            query=payload.query,
+            collection_name=payload.collection,
+            n_results=payload.n_results,
+            institution_id=trusted_tenant_id,
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(e),
+        ) from None
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Error during RAG retrieve_and_generate")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="RAG retrieval service temporarily unavailable. Please try again later.",
+        ) from None
 
     # Guardrail: log the anti-cheating outcome to the audit trail.
-    # result only carries socratic_mode/cheating_pattern for the
-    # study_materials collection (see retrieve_and_generate) — for
-    # portal_help_docs these keys are absent, so default them to the
-    # "guard didn't apply here" values rather than skipping the log
-    # entirely, so every query still gets one audit row.
     await log_socratic_redirect(
         db=db,
         user_id=current_user.id,
@@ -66,8 +89,33 @@ async def debug_query(
     q: str,
     collection: str = "study_materials",
     n_results: int = 3,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_role("admin")),
 ):
-    return debug_query_study_materials(
-        query=q, collection_name=collection, n_results=n_results
-    )
+    trusted_tenant_id = get_trusted_tenant_id(current_user)
+
+    if collection == "study_materials" and not trusted_tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tenant context required for study materials access",
+        )
+
+    try:
+        return debug_query_study_materials(
+            query=q,
+            collection_name=collection,
+            n_results=n_results,
+            institution_id=trusted_tenant_id,
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(e),
+        ) from None
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Error during debug_query_study_materials")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="RAG retrieval service temporarily unavailable. Please try again later.",
+        ) from None

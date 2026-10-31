@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class PortalAssistantRequest(BaseModel):
@@ -12,8 +12,21 @@ class PortalAssistantResponse(BaseModel):
 
 
 class AdminAssistantRequest(BaseModel):
-    session_id: str
-    query: str
+    model_config = ConfigDict(extra="forbid")
+
+    session_id: str = Field(
+        ...,
+        min_length=1,
+        max_length=64,
+        pattern=r"^[A-Za-z0-9_\-\.:]+$",
+        description="Client session identifier",
+    )
+    query: str = Field(
+        ...,
+        min_length=1,
+        max_length=2000,
+        description="Administrative query or instruction",
+    )
 
 
 class AdminAssistantResponse(BaseModel):
