@@ -272,11 +272,8 @@ export default function StudentRecords() {
 
     setIsSendingReport(true);
     try {
-      await apiClient.post(`/reports/parent-report/${target.id}`, {
-        parent_email: target.parentEmail,
-        student_name: target.name,
-      });
-      alert(`AI Progress report successfully generated and delivered to ${target.parentEmail}! Please check your email inbox.`);
+      await apiClient.post(`/reports/parent-report/${target.id}`, {});
+      alert(`AI Progress report successfully generated and delivered to registered parent email (${target.parentEmail})! Please check your email inbox.`);
     } catch (err) {
       console.error("Failed to send parent report:", err);
       const detail = err.response?.data?.detail || err.message || "Failed to deliver report";
