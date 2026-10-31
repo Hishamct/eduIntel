@@ -12,6 +12,7 @@ import asyncio
 
 from sqlalchemy import select
 
+from app.core.config import settings
 from app.core.database import AsyncSessionLocal
 from app.rag.service import ingest_study_material
 from app.teacher.models import StudyMaterial
@@ -99,6 +100,7 @@ async def seed():
                         subject=material.subject,
                         title=material.title,
                         extracted_text=extracted_text,
+                        institution_id=settings.DEFAULT_INSTITUTION_ID,
                     )
                 except Exception as e:
                     print(f"RAG ingestion failed for {subject}/{topic}: {e}")

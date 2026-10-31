@@ -13,6 +13,7 @@ from app.rag.service import ingest_study_material
 from app.student.models import HomeworkSubmission
 from app.teacher.models import Assignment, StudyMaterial
 from app.teacher.schemas import TeacherHomeworkSubmissionRead
+from app.users.models import StudentProfile, User
 
 logger = logging.getLogger(__name__)
 
@@ -146,6 +147,7 @@ async def save_study_material(
     title: str,
     description: str | None,
     file: UploadFile,
+    tenant_id: str | None = None,
 ) -> StudyMaterial:
     os.makedirs(STUDY_MATERIAL_UPLOAD_DIR, exist_ok=True)
 
@@ -195,12 +197,18 @@ async def save_study_material(
 
     if extracted_text:
         try:
-            ingest_study_material(
-                material_id=material.id,
-                subject=material.subject,
-                title=material.title,
-                extracted_text=extracted_text,
-            )
+            if tenant_id:
+                ingest_study_material(
+                    material_id=material.id,
+                    subject=material.subject,
+                    title=material.title,
+                    extracted_text=extracted_text,
+                    institution_id=tenant_id,
+                )
+            else:
+                logger.warning(
+                    f"RAG ingestion skipped for study material {material.id}: no trusted tenant context"
+                )
         except Exception as e:
             logger.warning(
                 f"RAG ingestion failed for study material {material.id}: {e}"
@@ -215,9 +223,6 @@ async def list_study_materials(db: AsyncSession, subject: str | None = None):
         query = query.where(StudyMaterial.subject == subject)
     result = await db.execute(query)
     return result.scalars().all()
-
-
-from app.users.models import StudentProfile, User
 
 
 async def list_students_for_teacher(db: AsyncSession, class_section: str | None = None):
