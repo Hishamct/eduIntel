@@ -1,34 +1,8 @@
-import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import apiClient from "../../api/client";
-import { TextField, SelectInput } from "../../components/ui";
 import "../../components/ui/ui.css";
 
 function Signup() {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [role, setRole] = useState("student");
-  const [error, setError] = useState("");
   const navigate = useNavigate();
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError("");
-
-    try {
-      await apiClient.post("/auth/signup", { email, password, role });
-      navigate("/login");
-    } catch (err) {
-      const detail = err.response?.data?.detail || "Signup failed. Please try again.";
-      setError(detail);
-    }
-  };
-
-  const roleOptions = [
-    { value: "student", label: "Student" },
-    { value: "teacher", label: "Teacher / Educator" },
-    { value: "admin", label: "Administrator" }
-  ];
 
   return (
     <div
@@ -46,14 +20,15 @@ function Signup() {
         className="edu-card"
         style={{
           width: "100%",
-          maxWidth: "420px",
-          padding: "36px 32px",
+          maxWidth: "460px",
+          padding: "40px 32px",
           backgroundColor: "#FFFFFF",
-          boxShadow: "0 10px 25px -5px rgba(38, 65, 94, 0.08)"
+          boxShadow: "0 10px 25px -5px rgba(38, 65, 94, 0.08)",
+          textAlign: "center"
         }}
       >
         {/* Brand Header */}
-        <div style={{ textAlign: "center", marginBottom: "28px" }}>
+        <div style={{ marginBottom: "28px" }}>
           <h1
             className="edu-font-heading"
             style={{
@@ -76,77 +51,86 @@ function Signup() {
               marginTop: "4px"
             }}
           >
-            Create Your Account
+            Institutional Access Portal
           </p>
         </div>
 
-        {/* Error Notification Banner */}
-        {error && (
-          <div
-            style={{
-              padding: "10px 14px",
-              backgroundColor: "rgba(178, 58, 46, 0.1)",
-              border: "1px solid #B23A2E",
-              borderRadius: "4px",
-              color: "#B23A2E",
-              fontSize: "13px",
-              marginBottom: "20px",
-              display: "flex",
-              alignItems: "center",
-              gap: "8px"
-            }}
-          >
-            <span className="material-symbols-outlined" style={{ fontSize: "18px" }}>
-              error
-            </span>
-            <span>{error}</span>
-          </div>
-        )}
+        {/* Security Shield Icon */}
+        <div
+          style={{
+            width: "56px",
+            height: "56px",
+            borderRadius: "50%",
+            backgroundColor: "rgba(38, 65, 94, 0.08)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            margin: "0 auto 20px auto",
+            color: "#26415E"
+          }}
+        >
+          <span className="material-symbols-outlined" style={{ fontSize: "28px" }}>
+            admin_panel_settings
+          </span>
+        </div>
 
-        {/* Signup Form */}
-        <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
-          <TextField
-            label="Email Address"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="user@eduintel.ai"
-            icon="mail"
-            required
-          />
+        {/* Information Notice */}
+        <h2
+          style={{
+            fontSize: "18px",
+            fontWeight: 600,
+            color: "#0F172A",
+            marginBottom: "12px"
+          }}
+        >
+          Public Registration Closed
+        </h2>
 
-          <TextField
-            label="Password (min. 8 characters)"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="••••••••"
-            icon="lock"
-            required
-          />
+        <div
+          style={{
+            padding: "16px",
+            backgroundColor: "#F8FAFC",
+            border: "1px solid #E2E8F0",
+            borderRadius: "8px",
+            textAlign: "left",
+            fontSize: "13px",
+            lineHeight: "1.6",
+            color: "#334155",
+            marginBottom: "24px"
+          }}
+        >
+          <p style={{ margin: "0 0 10px 0" }}>
+            <strong>Institutional Provisioning Policy:</strong>
+          </p>
+          <p style={{ margin: "0 0 8px 0" }}>
+            Public account self-registration is disabled. All student, teacher, and administrator accounts must be provisioned directly by an authorized institution administrator.
+          </p>
+          <p style={{ margin: 0, color: "#64748B" }}>
+            If you need an account or login credentials, please contact your coaching institute or school administration office.
+          </p>
+        </div>
 
-          <SelectInput
-            label="Institutional Role"
-            value={role}
-            onChange={(e) => setRole(e.target.value)}
-            options={roleOptions}
-            placeholder=""
-          />
-
-          <button
-            type="submit"
-            className="edu-btn-accent"
-            style={{
-              width: "100%",
-              padding: "12px",
-              marginTop: "8px",
-              fontSize: "12px",
-              letterSpacing: "0.05em"
-            }}
-          >
-            Register Account
-          </button>
-        </form>
+        {/* Action Button */}
+        <button
+          type="button"
+          onClick={() => navigate("/login")}
+          className="edu-btn-primary"
+          style={{
+            width: "100%",
+            padding: "12px",
+            fontSize: "13px",
+            letterSpacing: "0.03em",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "8px"
+          }}
+        >
+          <span className="material-symbols-outlined" style={{ fontSize: "16px" }}>
+            arrow_back
+          </span>
+          Return to Sign In
+        </button>
 
         {/* Navigation Footer */}
         <div
@@ -159,12 +143,12 @@ function Signup() {
             color: "#5F6774"
           }}
         >
-          Already registered?{" "}
+          Need to recover an existing account?{" "}
           <a
-            href="/login"
+            href="/password-reset"
             style={{ color: "#26415E", textDecoration: "none", fontWeight: 600 }}
           >
-            Sign in here →
+            Reset Password →
           </a>
         </div>
       </div>

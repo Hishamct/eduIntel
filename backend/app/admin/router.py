@@ -1,11 +1,14 @@
+import logging
 import uuid
+from datetime import date
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.admin.schemas import (
     SalaryRecordCreate,
     SalaryRecordRead,
+    StaffProvisionRequest,
     StudentEnrollCreate,
     StudentRead,
     StudentUpdate,
@@ -14,19 +17,31 @@ from app.admin.schemas import (
     TimetableEntryRead,
 )
 from app.admin.service import (
+    TenantAggregationBlockedError,
     create_salary_record,
+    create_staff_user,
     create_timetable_entry,
     enroll_student,
     get_admin_dashboard_summary,
+    get_attendance_stats,
+    get_revenue_summary,
+    get_salary_summary,
+    get_student_teacher_counts,
+    get_teacher_grading_performance,
+    get_timetable_coverage,
     list_salary_records,
     list_students,
     list_teachers,
     list_timetable,
     update_student_profile,
 )
+from app.auth.schemas import UserResponse
 from app.core.database import get_db
+from app.core.tenant import get_trusted_tenant_id
 from app.users.dependencies import require_role
 from app.users.models import User
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -36,7 +51,19 @@ async def admin_dashboard(
     current_user: User = Depends(require_role("admin")),
     db: AsyncSession = Depends(get_db),
 ):
-    summary = await get_admin_dashboard_summary(db=db)
+    trusted_tenant = get_trusted_tenant_id(current_user)
+    if not trusted_tenant:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tenant context required for dashboard access.",
+        )
+    try:
+        summary = await get_admin_dashboard_summary(db=db, tenant_id=trusted_tenant)
+    except TenantAggregationBlockedError as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(e),
+        ) from None
     display_name = current_user.name or current_user.email.split("@")[0]
     return {
         "message": f"Welcome, {display_name}",
@@ -114,9 +141,12 @@ async def get_teachers(
     return teachers
 
 
-@router.post("/students", response_model=StudentRead)
+@router.post(
+    "/students", response_model=StudentRead, status_code=status.HTTP_201_CREATED
+)
 async def post_student(
     payload: StudentEnrollCreate,
+    request: Request,
     current_user: User = Depends(require_role("admin")),
     db: AsyncSession = Depends(get_db),
 ):
@@ -131,10 +161,64 @@ async def post_student(
         parent_email=payload.parent_email,
         phone=payload.phone,
         address=payload.address,
-        guardian_name=payload.guardian_name,
-        guardian_phone=payload.guardian_phone,
+        guardian_name=payload.guardian_name or payload.parent_name,
+        guardian_phone=payload.guardian_phone or payload.parent_phone,
+    )
+    logger.info(
+        "AUDIT: User provisioned | actor_id=%s | target_id=%s | target_email=%s | role=%s | ip=%s",
+        current_user.id,
+        student["id"],
+        student["email"],
+        "student",
+        request.client.host if request.client else "unknown",
     )
     return student
+
+
+@router.post(
+    "/teachers", response_model=UserResponse, status_code=status.HTTP_201_CREATED
+)
+async def create_teacher(
+    data: StaffProvisionRequest,
+    request: Request,
+    current_user: User = Depends(require_role("admin")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Authenticated institutional administrator provisions a teacher account."""
+    new_user = await create_staff_user(db, data, role="teacher")
+    logger.info(
+        "AUDIT: User provisioned | actor_id=%s | target_id=%s | target_email=%s | role=%s | ip=%s",
+        current_user.id,
+        new_user.id,
+        new_user.email,
+        new_user.role,
+        request.client.host if request.client else "unknown",
+    )
+    return new_user
+
+
+@router.post(
+    "/administrators",
+    response_model=UserResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_administrator(
+    data: StaffProvisionRequest,
+    request: Request,
+    current_user: User = Depends(require_role("admin")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Authenticated institutional administrator provisions an additional administrator account."""
+    new_user = await create_staff_user(db, data, role="admin")
+    logger.info(
+        "AUDIT: User provisioned | actor_id=%s | target_id=%s | target_email=%s | role=%s | ip=%s",
+        current_user.id,
+        new_user.id,
+        new_user.email,
+        new_user.role,
+        request.client.host if request.client else "unknown",
+    )
+    return new_user
 
 
 @router.get("/students", response_model=list[StudentRead])
@@ -144,20 +228,6 @@ async def get_students(
 ):
     students = await list_students(db=db)
     return students
-
-
-from datetime import date
-
-from app.admin.service import (
-    get_attendance_stats,
-    get_revenue_summary,
-    get_salary_summary,
-    get_student_teacher_counts,
-    get_teacher_grading_performance,
-    get_timetable_coverage,
-)
-
-# add StudentUpdate to the schemas import, update_student_profile to the service import
 
 
 @router.patch("/students/{student_id}", response_model=StudentRead)
@@ -187,7 +257,19 @@ async def debug_student_teacher_counts(
     current_user: User = Depends(require_role("admin")),
     db: AsyncSession = Depends(get_db),
 ):
-    return await get_student_teacher_counts(db=db)
+    trusted_tenant = get_trusted_tenant_id(current_user)
+    if not trusted_tenant:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tenant context required for administrative reporting.",
+        )
+    try:
+        return await get_student_teacher_counts(db=db, tenant_id=trusted_tenant)
+    except TenantAggregationBlockedError as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(e),
+        ) from None
 
 
 @router.get("/debug/salary-summary")
@@ -196,7 +278,19 @@ async def debug_salary_summary(
     current_user: User = Depends(require_role("admin")),
     db: AsyncSession = Depends(get_db),
 ):
-    return await get_salary_summary(db=db, month=month)
+    trusted_tenant = get_trusted_tenant_id(current_user)
+    if not trusted_tenant:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tenant context required for administrative reporting.",
+        )
+    try:
+        return await get_salary_summary(db=db, month=month, tenant_id=trusted_tenant)
+    except TenantAggregationBlockedError as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(e),
+        ) from None
 
 
 @router.get("/debug/timetable-coverage")
@@ -205,7 +299,21 @@ async def debug_timetable_coverage(
     current_user: User = Depends(require_role("admin")),
     db: AsyncSession = Depends(get_db),
 ):
-    return await get_timetable_coverage(db=db, class_section=class_section)
+    trusted_tenant = get_trusted_tenant_id(current_user)
+    if not trusted_tenant:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tenant context required for administrative reporting.",
+        )
+    try:
+        return await get_timetable_coverage(
+            db=db, class_section=class_section, tenant_id=trusted_tenant
+        )
+    except TenantAggregationBlockedError as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(e),
+        ) from None
 
 
 @router.get("/debug/teacher-grading-performance")
@@ -213,7 +321,19 @@ async def debug_teacher_grading_performance(
     current_user: User = Depends(require_role("admin")),
     db: AsyncSession = Depends(get_db),
 ):
-    return await get_teacher_grading_performance(db=db)
+    trusted_tenant = get_trusted_tenant_id(current_user)
+    if not trusted_tenant:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tenant context required for administrative reporting.",
+        )
+    try:
+        return await get_teacher_grading_performance(db=db, tenant_id=trusted_tenant)
+    except TenantAggregationBlockedError as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(e),
+        ) from None
 
 
 @router.get("/debug/revenue-summary")
@@ -222,7 +342,19 @@ async def debug_revenue_summary(
     current_user: User = Depends(require_role("admin")),
     db: AsyncSession = Depends(get_db),
 ):
-    return await get_revenue_summary(db=db, month=month)
+    trusted_tenant = get_trusted_tenant_id(current_user)
+    if not trusted_tenant:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tenant context required for administrative reporting.",
+        )
+    try:
+        return await get_revenue_summary(db=db, month=month, tenant_id=trusted_tenant)
+    except TenantAggregationBlockedError as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(e),
+        ) from None
 
 
 @router.get("/debug/attendance-stats")
@@ -231,4 +363,18 @@ async def debug_attendance_stats(
     current_user: User = Depends(require_role("admin")),
     db: AsyncSession = Depends(get_db),
 ):
-    return await get_attendance_stats(db=db, class_section=class_section)
+    trusted_tenant = get_trusted_tenant_id(current_user)
+    if not trusted_tenant:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tenant context required for administrative reporting.",
+        )
+    try:
+        return await get_attendance_stats(
+            db=db, class_section=class_section, tenant_id=trusted_tenant
+        )
+    except TenantAggregationBlockedError as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(e),
+        ) from None
