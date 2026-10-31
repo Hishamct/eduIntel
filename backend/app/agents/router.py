@@ -1,9 +1,16 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agents.admin_assistant import chat_with_admin_assistant
 from app.agents.portal_assistant import chat_with_portal_assistant
-from app.agents.schemas import PortalAssistantRequest, PortalAssistantResponse
+from app.agents.schemas import (
+    AdminAssistantRequest,
+    AdminAssistantResponse,
+    PortalAssistantRequest,
+    PortalAssistantResponse,
+)
 from app.core.database import get_db
+from app.core.tenant import get_trusted_tenant_id
 from app.observability.service import log_agent_trace, log_ai_query, log_llm_usage
 from app.users.dependencies import require_role
 from app.users.models import User
@@ -44,19 +51,24 @@ async def portal_assistant_chat(
     return result
 
 
-from app.agents.admin_assistant import chat_with_admin_assistant
-from app.agents.schemas import AdminAssistantRequest, AdminAssistantResponse
-
-
 @router.post("/admin-assistant/chat", response_model=AdminAssistantResponse)
 async def admin_assistant_chat(
     payload: AdminAssistantRequest,
     current_user: User = Depends(require_role("admin")),
     db: AsyncSession = Depends(get_db),
 ):
+    trusted_tenant_id = get_trusted_tenant_id(current_user)
+    if not trusted_tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tenant context required for administrative assistant access.",
+        )
+
     result = await chat_with_admin_assistant(
         session_id=payload.session_id,
         query=payload.query,
+        tenant_id=trusted_tenant_id,
+        user_id=current_user.id,
     )
 
     await log_ai_query(

@@ -1,70 +1,160 @@
+import logging
 import uuid
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
-from sqlalchemy import select
 
-from app.core.database import AsyncSessionLocal
+from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, ConfigDict
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.admin.models import Attendance, Timetable
+from app.core.database import get_db
 from app.reports.parent_report_agent import generate_and_send_report
+from app.student.models import HomeworkSubmission
+from app.teacher.models import ExamResult
+from app.users.dependencies import require_role
 from app.users.models import StudentProfile, User
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
 
-class ParentReportPayload(BaseModel):
-    parent_email: str | None = None
-    student_name: str | None = None
+class ParentReportRequest(BaseModel):
+    custom_message_note: str | None = None  # ZERO client recipient overrides allowed
+    model_config = ConfigDict(extra="forbid")
 
 
 @router.post("/parent-report/{student_id}")
 async def trigger_parent_report(
     student_id: str,
-    payload: ParentReportPayload | None = None,
+    payload: ParentReportRequest | None = None,
+    current_user: User = Depends(require_role("teacher", "admin")),
+    db: AsyncSession = Depends(get_db),
 ):
-    target_student_name = payload.student_name if payload and payload.student_name else None
-    target_parent_email = payload.parent_email if payload and payload.parent_email else None
-
-    # Check if student exists in database
-    async with AsyncSessionLocal() as db:
-        row = None
-        try:
-            uid = uuid.UUID(student_id)
-            result = await db.execute(
-                select(User, StudentProfile)
-                .join(StudentProfile, StudentProfile.user_id == User.id)
-                .where(User.id == uid)
-            )
-            row = result.first()
-        except ValueError:
-            pass
-
-        if not row and target_student_name:
-            result = await db.execute(
-                select(User, StudentProfile)
-                .join(StudentProfile, StudentProfile.user_id == User.id)
-                .where(User.name.ilike(f"%{target_student_name}%"))
-            )
-            row = result.first()
-
-        if row:
-            user, profile = row
-            target_student_name = target_student_name or user.name
-            target_parent_email = target_parent_email or profile.parent_email
-
-    if not target_student_name:
-        target_student_name = "Student"
-
-    if not target_parent_email:
-        raise HTTPException(400, "No parent email provided or on file for this student")
-
     try:
-        result = await generate_and_send_report(
-            student_id=student_id,
-            student_name=target_student_name,
-            parent_email=target_parent_email,
-        )
-        return result
-    except Exception as e:
+        uid = uuid.UUID(student_id)
+    except ValueError as e:
         raise HTTPException(
-            status_code=502,
-            detail=f"Failed to generate or deliver email via SMTP: {str(e)}",
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid student UUID format",
+        ) from e
+
+    result = await db.execute(
+        select(User, StudentProfile)
+        .join(StudentProfile, StudentProfile.user_id == User.id)
+        .where(User.id == uid, User.role == "student")
+    )
+    row = result.first()
+    if not row:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Student not found",
         )
+
+    student_user, profile = row
+    student_section = (
+        f"{profile.grade}-{profile.section}"
+        if profile.grade and profile.section
+        else None
+    )
+
+    # Multi-Factor Teacher Authorization Verification
+    if current_user.role == "teacher":
+        if not student_section:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Student is not assigned to any grade/section",
+            )
+
+        # 1. Condition A: Timetable Class Assignment
+        tt_res = await db.execute(
+            select(Timetable.id)
+            .where(
+                Timetable.teacher_id == current_user.id,
+                Timetable.class_section == student_section,
+            )
+            .limit(1)
+        )
+        if not tt_res.scalar_one_or_none():
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Authorization denied: You are not assigned to teach this student's class section.",
+            )
+
+        # 2. Condition B: Concrete Student-Specific Academic Relationship
+        # Must match at least one student-specific record entered or graded by this teacher
+        exam_link = await db.execute(
+            select(ExamResult.id)
+            .where(
+                ExamResult.student_id == uid,
+                ExamResult.entered_by == current_user.id,
+                ExamResult.class_section == student_section,
+            )
+            .limit(1)
+        )
+        att_link = await db.execute(
+            select(Attendance.id)
+            .where(
+                Attendance.student_id == uid,
+                Attendance.marked_by == current_user.id,
+                Attendance.class_section == student_section,
+            )
+            .limit(1)
+        )
+        hw_link = await db.execute(
+            select(HomeworkSubmission.id)
+            .where(
+                HomeworkSubmission.student_id == uid,
+                HomeworkSubmission.graded_by == current_user.id,
+                HomeworkSubmission.status == "graded",
+            )
+            .limit(1)
+        )
+
+        has_student_specific_link = (
+            exam_link.scalar_one_or_none() is not None
+            or att_link.scalar_one_or_none() is not None
+            or hw_link.scalar_one_or_none() is not None
+        )
+        if not has_student_specific_link:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(
+                    "Authorization denied: No student-specific academic records "
+                    "(entered exam scores, marked attendance, or graded homework) link you to this student."
+                ),
+            )
+
+    # Strictly enforce verified parent email from database
+    if not profile.parent_email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Student has no registered parent email on file. Update student profile before generating report.",
+        )
+
+    # Dispatch strictly to verified database email
+    try:
+        report_result = await generate_and_send_report(
+            student_id=str(uid),
+            student_name=student_user.name or "Student",
+            parent_email=profile.parent_email,
+            db=db,
+            generated_by_user_id=current_user.id,
+        )
+        return report_result
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            "Parent report generation/delivery failed | actor_id=%s | student_id=%s | error_type=%s",
+            current_user.id,
+            uid,
+            type(e).__name__,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=(
+                "Failed to generate or deliver progress report. "
+                "Please contact system support if this issue persists."
+            ),
+        ) from e

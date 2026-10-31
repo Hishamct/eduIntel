@@ -70,8 +70,12 @@ docs/
 - **[Database Migrations](database/migrations.md)**: Alembic migration sequence, baseline history, downgrade capabilities, and migration hygiene guidelines.
 
 ### 🛡️ 5. Security & Governance
-- **[Authentication & RBAC](security/auth-and-rbac.md)**: Password hashing with bcrypt, JWT token issuance, FastAPI role-enforcing dependencies, and privilege escalation mitigations.
+- **[Authentication & RBAC](security/auth-and-rbac.md)**: Password hashing with bcrypt, JWT token issuance via `HttpOnly` cookies, dual-mode auth, FastAPI role-enforcing dependencies, and privilege escalation mitigations.
 - **[AI Guardrails & PII](security/guardrails-and-pii.md)**: Automated PII redaction engine (Aadhaar, phone, email, IP, credit cards), prompt injection defenses, and Socratic anti-cheating mechanisms.
+- **[Security Audit & Remediation Tracker](security/security-audit.md)**: Comprehensive vulnerability catalog and Phase 2B remediation tracker for SEC-01 through SEC-19.
+- **[Authorization Matrix](security/authorization-matrix.md)**: Complete endpoint-by-endpoint RBAC and multi-factor relational ownership matrix.
+- **[Phase 2B Security Closure Report](production-readiness/06-phase-2b-security-remediation-closure-report.md)**: Final signed-off closure report detailing the 10 remediated findings, 278 backend test cases, and 8 frontend test cases.
+- **[Multi-Tenant Architecture](architecture/multi-tenant-architecture.md)**: Foundational multi-tenant isolation specifications and schema partitioning design for Phase 2C.
 
 ### 🤖 6. Artificial Intelligence & Analytics
 - **[RAG Architecture](ai/rag-architecture.md)**: Vector embedding pipelines using Google Gemini, persistent ChromaDB collections, chunking strategies, and Socratic query synthesis.

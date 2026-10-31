@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
 class TimetableEntryCreate(BaseModel):
@@ -54,24 +54,44 @@ class TeacherSummary(BaseModel):
 
 
 class StudentEnrollCreate(BaseModel):
-    email: str
-    password: str
+    model_config = ConfigDict(extra="forbid")
+
+    email: EmailStr
+    password: str = Field(min_length=8)
     name: str
     grade: str | None = None
     section: str | None = None
     roll_number: str | None = None
-    parent_email: str | None = None
+    parent_email: EmailStr | None = None
     phone: str | None = None
     address: str | None = None
     guardian_name: str | None = None
     guardian_phone: str | None = None
+    parent_name: str | None = None
+    parent_phone: str | None = None
+
+
+StudentProvisionRequest = StudentEnrollCreate
+
+
+class StaffProvisionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    email: EmailStr
+    password: str = Field(min_length=8)
+    name: str
+    department: str | None = None
+    designation: str | None = None
+    subjects: str | None = None
 
 
 class StudentUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     grade: str | None = None
     section: str | None = None
     roll_number: str | None = None
-    parent_email: str | None = None
+    parent_email: EmailStr | None = None
     phone: str | None = None
     address: str | None = None
     guardian_name: str | None = None

@@ -25,15 +25,17 @@ Setup:
 """
 import os
 import uuid
-import pytest
+
 import pytest_asyncio
-from httpx import AsyncClient, ASGITransport
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
 # --- ADJUST THIS IMPORT if your FastAPI app instance or Base live elsewhere ---
-from app.main import app
+from app.auth.security import create_access_token, hash_password
 from app.core.database import Base, get_db
+from app.main import app
+from app.users.models import AdminProfile, StudentProfile, TeacherProfile, User
 
 TEST_DATABASE_URL = os.environ.get(
     "TEST_DATABASE_URL",
@@ -93,54 +95,58 @@ async def client(test_engine):
     app.dependency_overrides.clear()
 
 
-async def _signup_and_login(client: AsyncClient, role: str) -> str:
+async def _provision_user(test_engine, role: str) -> str:
     """
-    Creates a throwaway test user with the given role and returns a bearer
-    token for them.
-
-    *** ADJUST THE SIGNUP PAYLOAD BELOW to match your real POST /auth/signup
-    field names *** — I don't know your exact schema (e.g. whether it's
-    `full_name` or `name`, whether role is a plain string or an enum value,
-    whether signup itself takes a role at all vs. assigning "student" by
-    default and requiring an admin to promote teachers/admins). Login is
-    confirmed as POST /auth/login with {email, password}.
+    Creates a throwaway test user and profile directly in the test database
+    and returns a valid access token. Does NOT use public signup since
+    public signup is disabled in SEC-02.
     """
     unique = uuid.uuid4().hex[:8]
     email = f"test-{role}-{unique}@example.com"
     password = "TestPassword123!"
 
-    signup_payload = {
-        "email": email,
-        "password": password,
-        "full_name": f"Test {role.capitalize()}",
-        "role": role,
-    }
-    signup_resp = await client.post("/auth/signup", json=signup_payload)
-    assert signup_resp.status_code in (200, 201), (
-        f"Signup failed for role={role}: {signup_resp.status_code} {signup_resp.text}\n"
-        f"--> Fix the signup_payload shape in tests/conftest.py to match your "
-        f"real POST /auth/signup schema."
-    )
+    TestSessionLocal = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with TestSessionLocal() as session:
+        user = User(
+            email=email,
+            name=f"Test {role.capitalize()}",
+            hashed_password=hash_password(password),
+            role=role,
+            is_active=True,
+        )
+        session.add(user)
+        await session.flush()
 
-    login_resp = await client.post("/auth/login", json={"email": email, "password": password})
-    assert login_resp.status_code == 200, f"Login failed for {email}: {login_resp.text}"
-    token = login_resp.json()["access_token"]  # ADJUST if your login response key differs
-    return token
+        if role == "student":
+            session.add(StudentProfile(user_id=user.id, grade="10", section="A"))
+        elif role == "teacher":
+            session.add(
+                TeacherProfile(
+                    user_id=user.id, department="Science", subjects="Physics"
+                )
+            )
+        elif role == "admin":
+            session.add(
+                AdminProfile(user_id=user.id, designation="Test Administrator")
+            )
+
+        await session.commit()
+        return create_access_token({"sub": str(user.id), "role": role})
 
 
 @pytest_asyncio.fixture
-async def admin_token(client) -> str:
-    return await _signup_and_login(client, "admin")
+async def admin_token(test_engine) -> str:
+    return await _provision_user(test_engine, "admin")
 
 
 @pytest_asyncio.fixture
-async def teacher_token(client) -> str:
-    return await _signup_and_login(client, "teacher")
+async def teacher_token(test_engine) -> str:
+    return await _provision_user(test_engine, "teacher")
 
 
 @pytest_asyncio.fixture
-async def student_token(client) -> str:
-    return await _signup_and_login(client, "student")
+async def student_token(test_engine) -> str:
+    return await _provision_user(test_engine, "student")
 
 
 def auth_headers(token: str) -> dict:

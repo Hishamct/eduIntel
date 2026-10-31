@@ -1,16 +1,25 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import apiClient from "../../api/client";
 import { TextField } from "../../components/ui";
 import "../../components/ui/ui.css";
 
 function PasswordReset() {
+  const [searchParams] = useSearchParams();
+  const tokenFromUrl = searchParams.get("token") || "";
+
   const [email, setEmail] = useState("");
-  const [token, setToken] = useState("");
+  const [token, setToken] = useState(tokenFromUrl);
   const [newPassword, setNewPassword] = useState("");
   const [requestMessage, setRequestMessage] = useState("");
   const [error, setError] = useState("");
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (tokenFromUrl) {
+      setToken(tokenFromUrl);
+    }
+  }, [tokenFromUrl]);
 
   const handleRequestReset = async (e) => {
     e.preventDefault();
@@ -20,10 +29,6 @@ function PasswordReset() {
     try {
       const response = await apiClient.post("/auth/password-reset/request", { email });
       setRequestMessage(response.data.message);
-
-      if (response.data.dev_reset_token) {
-        setToken(response.data.dev_reset_token);
-      }
     } catch (err) {
       const detail = err.response?.data?.detail || "Request failed. Please try again.";
       setError(detail);

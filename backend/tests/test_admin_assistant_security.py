@@ -71,6 +71,7 @@ class TestToolWhitelistAndArbitrarySQLRejection:
     async def test_arbitrary_sql_tool_is_blocked(self):
         state = {
             "query": "drop all tables",
+            "tenant_id": "eduintel-pilot",
             "history": [],
             "tool_calls": [
                 {"name": "query_database", "args": {"sql": "DROP TABLE users CASCADE;"}},
@@ -194,6 +195,7 @@ class TestToolOutputSanitization:
         }):
             state = {
                 "query": "salary status",
+                "tenant_id": "eduintel-pilot",
                 "history": [],
                 "tool_calls": [{"name": "get_salary_summary", "args": {"month": "2026-08"}}],
                 "tool_results": [],
@@ -218,6 +220,7 @@ class TestToolOutputSanitization:
         with patch("app.agents.admin_assistant.TOOL_FUNCTIONS", {"get_attendance_stats": mock_tool_fn}):
             state = {
                 "query": "attendance",
+                "tenant_id": "eduintel-pilot",
                 "history": [],
                 "tool_calls": [{"name": "get_attendance_stats", "args": {"class_section": "10-A"}}],
                 "tool_results": [],
@@ -252,6 +255,7 @@ class TestApprovedReportingExecution:
         }):
             state = {
                 "query": "how many students and teachers",
+                "tenant_id": "eduintel-pilot",
                 "history": [],
                 "tool_calls": [{"name": "get_student_teacher_counts", "args": {}}],
                 "tool_results": [],

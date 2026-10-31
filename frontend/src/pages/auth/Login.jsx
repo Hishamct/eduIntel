@@ -17,12 +17,13 @@ function Login() {
     setIsLoggingIn(true);
 
     try {
-      const loginResponse = await apiClient.post("/auth/login", { email, password });
-      const token = loginResponse.data.access_token;
-      localStorage.setItem("access_token", token);
+      await apiClient.post("/auth/login", { email, password });
+      // Token is stored exclusively in HttpOnly cookie; do not store JWT in localStorage
+      sessionStorage.setItem("is_authenticated", "true");
 
       const meResponse = await apiClient.get("/users/me");
       const role = meResponse.data.role;
+      sessionStorage.setItem("user_role", role);
 
       navigate(`/${role}/dashboard`);
     } catch (err) {
@@ -149,159 +150,84 @@ function Login() {
             <span className="material-symbols-outlined" style={{ fontSize: "16px" }}>login</span>
           </button>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "6px", marginTop: "4px" }}>
-            <button
-              type="button"
-              onClick={() => {
-                setEmail("hishamadmin@gmail.com");
-                setPassword("hishamadmin");
-              }}
-              style={{
-                padding: "8px 6px",
-                fontSize: "11px",
-                fontWeight: 600,
-                color: "#059669",
-                background: "rgba(16, 185, 129, 0.1)",
-                border: "1px solid rgba(16, 185, 129, 0.25)",
-                borderRadius: "8px",
-                cursor: "pointer",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: "3px"
-              }}
-            >
-              <span className="material-symbols-outlined" style={{ fontSize: "14px" }}>admin_panel_settings</span>
-              Admin Fill
-            </button>
+          {import.meta.env.DEV && (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "6px", marginTop: "4px" }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setEmail("hishamadmin@gmail.com");
+                  setPassword("hishamadmin");
+                }}
+                style={{
+                  padding: "8px 6px",
+                  fontSize: "11px",
+                  fontWeight: 600,
+                  color: "#059669",
+                  background: "rgba(16, 185, 129, 0.1)",
+                  border: "1px solid rgba(16, 185, 129, 0.25)",
+                  borderRadius: "8px",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "3px"
+                }}
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: "14px" }}>admin_panel_settings</span>
+                Admin Fill
+              </button>
 
-            <button
-              type="button"
-              onClick={() => {
-                setEmail("hishamteacher@gmail.com");
-                setPassword("hishamteacher");
-              }}
-              style={{
-                padding: "8px 6px",
-                fontSize: "11px",
-                fontWeight: 600,
-                color: "#0284C7",
-                background: "rgba(14, 165, 233, 0.1)",
-                border: "1px solid rgba(14, 165, 233, 0.25)",
-                borderRadius: "8px",
-                cursor: "pointer",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: "3px"
-              }}
-            >
-              <span className="material-symbols-outlined" style={{ fontSize: "14px" }}>school</span>
-              Teacher Fill
-            </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setEmail("hishamteacher@gmail.com");
+                  setPassword("hishamteacher");
+                }}
+                style={{
+                  padding: "8px 6px",
+                  fontSize: "11px",
+                  fontWeight: 600,
+                  color: "#0284C7",
+                  background: "rgba(14, 165, 233, 0.1)",
+                  border: "1px solid rgba(14, 165, 233, 0.25)",
+                  borderRadius: "8px",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "3px"
+                }}
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: "14px" }}>school</span>
+                Teacher Fill
+              </button>
 
-            <button
-              type="button"
-              onClick={() => {
-                setEmail("synth_student_0@eduintel.demo");
-                setPassword("demo_password_123");
-              }}
-              style={{
-                padding: "8px 6px",
-                fontSize: "11px",
-                fontWeight: 600,
-                color: "#8B5CF6",
-                background: "rgba(139, 92, 246, 0.1)",
-                border: "1px solid rgba(139, 92, 246, 0.25)",
-                borderRadius: "8px",
-                cursor: "pointer",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: "3px"
-              }}
-            >
-              <span className="material-symbols-outlined" style={{ fontSize: "14px" }}>person</span>
-              Student Fill
-            </button>
-          </div>
-
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "6px", marginTop: "4px" }}>
-            <button
-              type="button"
-              onClick={() => {
-                localStorage.setItem("demo_mode", "true");
-                navigate("/admin/dashboard");
-              }}
-              style={{
-                padding: "8px 6px",
-                fontSize: "11px",
-                fontWeight: 600,
-                color: "#1E293B",
-                background: "rgba(241, 245, 249, 0.8)",
-                border: "1px solid rgba(226, 232, 240, 0.9)",
-                borderRadius: "8px",
-                cursor: "pointer",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: "3px"
-              }}
-            >
-              <span className="material-symbols-outlined" style={{ fontSize: "14px", color: "#64748B" }}>preview</span>
-              Admin Demo
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                localStorage.setItem("demo_mode", "true");
-                navigate("/teacher/dashboard");
-              }}
-              style={{
-                padding: "8px 6px",
-                fontSize: "11px",
-                fontWeight: 600,
-                color: "#1E293B",
-                background: "rgba(241, 245, 249, 0.8)",
-                border: "1px solid rgba(226, 232, 240, 0.9)",
-                borderRadius: "8px",
-                cursor: "pointer",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: "3px"
-              }}
-            >
-              <span className="material-symbols-outlined" style={{ fontSize: "14px", color: "#64748B" }}>preview</span>
-              Teacher Demo
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                localStorage.setItem("demo_mode", "true");
-                navigate("/student/dashboard");
-              }}
-              style={{
-                padding: "8px 6px",
-                fontSize: "11px",
-                fontWeight: 600,
-                color: "#1E293B",
-                background: "rgba(241, 245, 249, 0.8)",
-                border: "1px solid rgba(226, 232, 240, 0.9)",
-                borderRadius: "8px",
-                cursor: "pointer",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: "3px"
-              }}
-            >
-              <span className="material-symbols-outlined" style={{ fontSize: "14px", color: "#64748B" }}>preview</span>
-              Student Demo
-            </button>
-          </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setEmail("synth_student_0@eduintel.demo");
+                  setPassword("demo_password_123");
+                }}
+                style={{
+                  padding: "8px 6px",
+                  fontSize: "11px",
+                  fontWeight: 600,
+                  color: "#8B5CF6",
+                  background: "rgba(139, 92, 246, 0.1)",
+                  border: "1px solid rgba(139, 92, 246, 0.25)",
+                  borderRadius: "8px",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "3px"
+                }}
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: "14px" }}>person</span>
+                Student Fill
+              </button>
+            </div>
+          )}
         </form>
 
         {/* Navigation Footer Links */}

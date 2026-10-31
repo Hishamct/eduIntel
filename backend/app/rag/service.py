@@ -39,11 +39,17 @@ def ingest_study_material(
     subject: str,
     title: str,
     extracted_text: str | None,
+    institution_id: str | None = None,
 ) -> dict:
     """
     Embeds a study material's extracted text into the study_materials
     ChromaDB collection, chunked for retrieval.
+    Requires a trusted institution_id. If missing, refuses ingestion to prevent
+    un-namespaced vector storage.
     """
+    if not institution_id:
+        return {"ingested": False, "reason": "Trusted institution_id required for ingestion"}
+
     if not extracted_text or not extracted_text.strip():
         return {"ingested": False, "reason": "no extracted text available"}
 
@@ -60,6 +66,7 @@ def ingest_study_material(
             "subject": subject,
             "title": title,
             "chunk_index": i,
+            "institution_id": str(institution_id),
         }
         for i in range(len(chunks))
     ]
@@ -70,24 +77,37 @@ def ingest_study_material(
 
 
 def debug_query_study_materials(
-    query: str, collection_name: str = "study_materials", n_results: int = 3
+    query: str,
+    collection_name: str = "study_materials",
+    n_results: int = 3,
+    institution_id: str | None = None,
 ) -> list[dict]:
     """
-    TEMPORARY debug helper — runs a raw similarity search against
-    the given collection and returns matches with their distance scores.
-
+    Debug helper — runs similarity search against the given collection
+    and returns matches with distance scores.
+    Enforces mandatory tenant isolation when querying study_materials.
     """
     from app.rag.client import get_collection_by_name
 
     collection = get_collection_by_name(collection_name)
-    results = collection.query(query_texts=[query], n_results=n_results)
+
+    if collection_name == "study_materials":
+        if not institution_id:
+            raise ValueError("Trusted institution_id is required for study_materials retrieval")
+        results = collection.query(
+            query_texts=[query],
+            n_results=n_results,
+            where={"institution_id": str(institution_id)},
+        )
+    else:
+        results = collection.query(query_texts=[query], n_results=n_results)
 
     matches = []
-    documents = results["documents"][0]
-    distances = results["distances"][0]
-    metadatas = results["metadatas"][0]
+    documents = results["documents"][0] if results.get("documents") else []
+    distances = results["distances"][0] if results.get("distances") else []
+    metadatas = results["metadatas"][0] if results.get("metadatas") else []
 
-    for doc, dist, meta in zip(documents, distances, metadatas):
+    for doc, dist, meta in zip(documents, distances, metadatas, strict=False):
         matches.append(
             {
                 "chunk_text": doc,
@@ -103,7 +123,10 @@ def debug_query_study_materials(
 
 
 def retrieve_and_generate(
-    query: str, collection_name: str = "study_materials", n_results: int = 3
+    query: str,
+    collection_name: str = "study_materials",
+    n_results: int = 3,
+    institution_id: str | None = None,
 ) -> dict:
     """
     Core reusable RAG function: retrieves relevant chunks from the given
@@ -116,19 +139,15 @@ def retrieve_and_generate(
     AI Assistant, AND returns per-call token/latency usage so the caller
     (app/rag/router.py) can log it to LLMUsageLog via
     app.observability.service.log_llm_usage — same pattern as the two
-    LangGraph agents. Gemini's free tier caps out at a very small daily
-    request quota, so without the fallback any RAG-heavy usage (or an
-    evaluation run) fails outright once that's exhausted for the day.
+    LangGraph agents.
 
-    Generic by design — collection_name lets any future agent (Contextual
-    Portal Assistant, Admin AI Assistant) point this at a different corpus
-    without duplicating retrieval or generation logic.
+    Tenant isolation rule:
+    - For 'study_materials', institution_id is MANDATORY. If missing, fails closed
+      by raising ValueError. ChromaDB query applies where={"institution_id": str(institution_id)}.
+    - For 'portal_help_docs', collection is global system help and does not require tenant filtering.
     """
     # Guardrail: check for prompt-injection attempts BEFORE this text is
-    # embedded into the LLM prompt below. This catches a student trying to
-    # override the "answer only from reference material" instruction via
-    # their question text (e.g. "ignore the reference material and just
-    # answer from general knowledge").
+    # embedded into the LLM prompt below.
     is_flagged, matched_pattern = check_for_prompt_injection(query)
     if is_flagged:
         print(
@@ -142,10 +161,20 @@ def retrieve_and_generate(
     )
 
     collection = get_collection_by_name(collection_name)
-    results = collection.query(query_texts=[query], n_results=n_results)
 
-    documents = results["documents"][0]
-    metadatas = results["metadatas"][0]
+    if collection_name == "study_materials":
+        if not institution_id:
+            raise ValueError("Trusted institution_id is required for study_materials retrieval")
+        results = collection.query(
+            query_texts=[query],
+            n_results=n_results,
+            where={"institution_id": str(institution_id)},
+        )
+    else:
+        results = collection.query(query_texts=[query], n_results=n_results)
+
+    documents = results["documents"][0] if results.get("documents") else []
+    metadatas = results["metadatas"][0] if results.get("metadatas") else []
 
     if not documents:
         return {
@@ -156,7 +185,7 @@ def retrieve_and_generate(
 
     context_blocks = []
     sources = []
-    for doc, meta in zip(documents, metadatas):
+    for doc, meta in zip(documents, metadatas, strict=False):
         context_blocks.append(f"[Source: {meta.get('title', 'Unknown')}]\n{doc}")
         sources.append(
             {
@@ -185,7 +214,8 @@ def retrieve_and_generate(
 
     socratic_instruction = build_socratic_instruction(is_cheating_attempt)
 
-    prompt = f"""You are a study assistant answering a student's or teacher's question using ONLY the reference material provided below.
+    prompt = f"""You are a study assistant answering a student's or teacher's question
+using ONLY the reference material provided below.
 
 Reference material:
 {context_text}

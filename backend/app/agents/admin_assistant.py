@@ -1,5 +1,7 @@
 import re
+import time
 import uuid
+from collections import OrderedDict
 from datetime import date
 from typing import TypedDict
 
@@ -8,6 +10,7 @@ from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.admin.service import (
+    TenantAggregationBlockedError,
     get_attendance_stats,
     get_revenue_summary,
     get_salary_summary,
@@ -27,13 +30,22 @@ from app.guardrails.prompt_injection import (
 )
 from app.observability.tracing import traced_node
 
-SYSTEM_SCOPE = """You are the EduIntel AI Admin Assistant. You help the institute owner/admin understand what's happening on the platform — student and teacher counts, salary/payroll status, timetable coverage, teacher grading performance, revenue/fee collection, and attendance — without them needing to dig through dashboards themselves.
+SYSTEM_SCOPE = """You are the EduIntel AI Admin Assistant. You help the institute owner/admin
+understand what's happening on the platform — student and teacher counts, salary/payroll status,
+timetable coverage, teacher grading performance, revenue/fee collection, and attendance — without
+them needing to dig through dashboards themselves.
 
-You have tools that query real, live data. Use them whenever the question is about actual numbers or status on the platform. Do not guess or estimate numbers yourself — only report what the tools return.
+You have tools that query real, live data. Use them whenever the question is about actual
+numbers or status on the platform. Do not guess or estimate numbers yourself — only report what
+the tools return.
 
-IMPORTANT — currency: This institute operates in India. Always express monetary amounts in Indian Rupees using the ₹ symbol (e.g. ₹42,500), never $ or USD. Use Indian-style comma grouping where natural (e.g. ₹1,37,000 rather than ₹137,000) if you can, but ₹ with standard grouping is acceptable too — the currency symbol is what matters most.
+IMPORTANT — currency: This institute operates in India. Always express monetary amounts in Indian
+Rupees using the ₹ symbol (e.g. ₹42,500), never $ or USD. Use Indian-style comma grouping where
+natural (e.g. ₹1,37,000 rather than ₹137,000) if you can, but ₹ with standard grouping is acceptable
+too — the currency symbol is what matters most.
 
-If the admin asks something entirely unrelated to running this institute (general chit-chat, unrelated topics), politely decline and steer back to what you can help with."""
+If the admin asks something entirely unrelated to running this institute (general chit-chat,
+unrelated topics), politely decline and steer back to what you can help with."""
 # --- Tool declarations Gemini sees ---
 TOOL_DECLARATIONS = [
     types.FunctionDeclaration(
@@ -43,7 +55,10 @@ TOOL_DECLARATIONS = [
     ),
     types.FunctionDeclaration(
         name="get_salary_summary",
-        description="Get salary/payroll summary: total payout, pending vs paid counts, base/bonus/deduction totals. Optionally filter to a specific month.",
+        description=(
+            "Get salary/payroll summary: total payout, pending vs paid counts, "
+            "base/bonus/deduction totals. Optionally filter to a specific month."
+        ),
         parameters={
             "type": "object",
             "properties": {
@@ -57,7 +72,10 @@ TOOL_DECLARATIONS = [
     ),
     types.FunctionDeclaration(
         name="get_timetable_coverage",
-        description="Get timetable period counts per class section, including how many periods have no teacher assigned. Optionally filter to one class section.",
+        description=(
+            "Get timetable period counts per class section, including how many periods have "
+            "no teacher assigned. Optionally filter to one class section."
+        ),
         parameters={
             "type": "object",
             "properties": {
@@ -71,12 +89,18 @@ TOOL_DECLARATIONS = [
     ),
     types.FunctionDeclaration(
         name="get_teacher_grading_performance",
-        description="Get per-teacher homework grading stats: how many submissions each teacher has graded and their average grading turnaround time in hours.",
+        description=(
+            "Get per-teacher homework grading stats: how many submissions each teacher has graded "
+            "and their average grading turnaround time in hours."
+        ),
         parameters={"type": "object", "properties": {}, "required": []},
     ),
     types.FunctionDeclaration(
         name="get_revenue_summary",
-        description="Get fee/revenue summary: total collected, pending, and overdue amounts. Optionally filter to a specific month.",
+        description=(
+            "Get fee/revenue summary: total collected, pending, and overdue amounts. "
+            "Optionally filter to a specific month."
+        ),
         parameters={
             "type": "object",
             "properties": {
@@ -90,7 +114,10 @@ TOOL_DECLARATIONS = [
     ),
     types.FunctionDeclaration(
         name="get_attendance_stats",
-        description="Get attendance percentages overall and per class section, including present/absent/late breakdowns. Optionally filter to one class section.",
+        description=(
+            "Get attendance percentages overall and per class section, including "
+            "present/absent/late breakdowns. Optionally filter to one class section."
+        ),
         parameters={
             "type": "object",
             "properties": {
@@ -241,6 +268,7 @@ APPROVED_TOOL_SCHEMAS = {
 
 class AgentState(TypedDict):
     query: str
+    tenant_id: str
     history: list[dict]
     tool_calls: list[dict]  # [{"name": str, "args": dict}]
     tool_results: list[dict]  # [{"name": str, "result": dict}]
@@ -277,6 +305,8 @@ async def execute_tools_node(state: AgentState) -> AgentState:
     if not state["tool_calls"]:
         return {**state, "tool_results": []}
 
+    tenant_id = state.get("tenant_id")
+
     async with AsyncSessionLocal() as db:
         for call in state["tool_calls"]:
             tool_name = call.get("name", "")
@@ -295,7 +325,18 @@ async def execute_tools_node(state: AgentState) -> AgentState:
                 })
                 continue
 
-            # 2. Enforce typed Pydantic validation on arguments
+            # 2. Enforce fail-closed requirement on tenant context
+            if not tenant_id:
+                tool_results.append({
+                    "name": tool_name,
+                    "result": {
+                        "status": "unavailable",
+                        "error": "Trusted tenant context is required for administrative reporting tools.",
+                    },
+                })
+                continue
+
+            # 3. Enforce typed Pydantic validation on arguments
             schema_cls = APPROVED_TOOL_SCHEMAS[tool_name]
             try:
                 validated_model = schema_cls(**raw_args)
@@ -309,16 +350,27 @@ async def execute_tools_node(state: AgentState) -> AgentState:
                 })
                 continue
 
-            # 3. Execute approved reporting tool function
+            # 4. Execute approved reporting tool function with tenant binding
             func = TOOL_FUNCTIONS[tool_name]
             try:
-                result = await func(db=db, **clean_args)
-                # 4. Scrub sensitive internal database identifiers from LLM prompt context
+                result = await func(db=db, tenant_id=tenant_id, **clean_args)
+                # 5. Scrub sensitive internal database identifiers from LLM prompt context
                 if isinstance(result, dict) and "pending_teacher_ids" in result:
                     result = {k: v for k, v in result.items() if k != "pending_teacher_ids"}
                 tool_results.append({"name": tool_name, "result": result})
+            except TenantAggregationBlockedError as blocked_err:
+                tool_results.append({
+                    "name": tool_name,
+                    "result": {
+                        "status": "unavailable",
+                        "error": (
+                            f"Reporting data for '{tool_name}' is currently unavailable for your institution: "
+                            f"{blocked_err}"
+                        ),
+                    },
+                })
             except Exception:
-                # 5. Safe error handling: never leak database credentials, connection strings, or internal tracebacks
+                # 6. Safe error handling: never leak database credentials, connection strings, or internal tracebacks
                 tool_results.append({
                     "name": tool_name,
                     "result": {"error": "Reporting query execution failed safely."},
@@ -351,7 +403,9 @@ Admin's new message: {state["query"]}
 Data retrieved from tools:
 {results_text}
 
-Respond clearly and concisely, summarizing the relevant numbers in plain language. Don't just dump raw JSON — explain what it means. If no tools were relevant, respond according to the scope rules above."""
+Respond clearly and concisely, summarizing the relevant numbers in plain language.
+Don't just dump raw JSON — explain what it means. If no tools were relevant,
+respond according to the scope rules above."""
 
     answer, usage = generate_text_with_usage(prompt)
     return {**state, "answer": answer, "generate_usage": usage}
@@ -368,10 +422,56 @@ graph.add_edge("generate", END)
 
 admin_assistant_graph = graph.compile()
 
-_admin_conversation_sessions: dict[str, list[dict]] = {}
+MAX_ADMIN_SESSIONS = 1000
+MAX_TURNS_PER_SESSION = 20  # 10 user + 10 assistant turns
+SESSION_TTL_SECONDS = 86400  # 24 hours
+
+_admin_conversation_sessions: OrderedDict[str, dict] = OrderedDict()
 
 
-async def chat_with_admin_assistant(session_id: str, query: str) -> dict:
+def _get_namespaced_session(namespaced_key: str) -> list[dict]:
+    """Retrieve session history with TTL validation and LRU touch."""
+    now = time.time()
+    session = _admin_conversation_sessions.get(namespaced_key)
+    if not session:
+        return []
+    if now - session.get("last_accessed", 0) > SESSION_TTL_SECONDS:
+        _admin_conversation_sessions.pop(namespaced_key, None)
+        return []
+    _admin_conversation_sessions.move_to_end(namespaced_key)
+    return list(session.get("history", []))
+
+
+def _save_namespaced_session(namespaced_key: str, history: list[dict]) -> None:
+    """Save session history with turn bounding, LRU ordering, and capacity eviction."""
+    now = time.time()
+    trimmed_history = history[-MAX_TURNS_PER_SESSION:]
+    if namespaced_key in _admin_conversation_sessions:
+        _admin_conversation_sessions.move_to_end(namespaced_key)
+    _admin_conversation_sessions[namespaced_key] = {
+        "history": trimmed_history,
+        "last_accessed": now,
+    }
+    while len(_admin_conversation_sessions) > MAX_ADMIN_SESSIONS:
+        _admin_conversation_sessions.popitem(last=False)
+
+
+def _reset_admin_conversation_sessions() -> None:
+    """Testing helper to clear in-memory admin sessions."""
+    _admin_conversation_sessions.clear()
+
+
+async def chat_with_admin_assistant(
+    session_id: str,
+    query: str,
+    tenant_id: str,
+    user_id: uuid.UUID | str,
+) -> dict:
+    if not tenant_id:
+        raise ValueError("Trusted tenant_id is required for admin assistant.")
+    if not user_id:
+        raise ValueError("User ID is required for admin assistant.")
+
     # Guardrail: check for prompt-injection attempts BEFORE this text ever
     # reaches the tool-decision prompt or the generation prompt. This
     # matters especially here because a successful injection against the
@@ -382,7 +482,7 @@ async def chat_with_admin_assistant(session_id: str, query: str) -> dict:
     if is_flagged:
         print(
             f"[guardrail] Blocked prompt-injection attempt in admin assistant "
-            f"(session={session_id}, pattern={matched_pattern!r})"
+            f"(tenant={tenant_id}, session={session_id}, pattern={matched_pattern!r})"
         )
         return {
             "answer": INJECTION_REFUSAL_MESSAGE,
@@ -407,12 +507,14 @@ async def chat_with_admin_assistant(session_id: str, query: str) -> dict:
             ],
         }
 
-    history = _admin_conversation_sessions.get(session_id, [])
+    scoped_session_key = f"{tenant_id}:{user_id}:{session_id}"
+    history = _get_namespaced_session(scoped_session_key)
     trace_id = str(uuid.uuid4())
 
     result = await admin_assistant_graph.ainvoke(
         {
             "query": query,
+            "tenant_id": tenant_id,
             "history": history,
             "tool_calls": [],
             "tool_results": [],
@@ -425,7 +527,7 @@ async def chat_with_admin_assistant(session_id: str, query: str) -> dict:
 
     history.append({"role": "user", "content": query})
     history.append({"role": "assistant", "content": result["answer"]})
-    _admin_conversation_sessions[session_id] = history
+    _save_namespaced_session(scoped_session_key, history)
 
     return {
         "answer": result["answer"],

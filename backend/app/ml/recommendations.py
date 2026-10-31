@@ -32,7 +32,9 @@ def normalize_subject_for_query(raw_subject: str) -> str:
 
 
 def get_recommendations_for_weak_topics(
-    top_weak_topics: list[dict], n_results_per_topic: int = 3
+    top_weak_topics: list[dict],
+    tenant_id: str | None = None,
+    n_results_per_topic: int = 3,
 ) -> list[dict]:
     recommendations = []
 
@@ -41,24 +43,54 @@ def get_recommendations_for_weak_topics(
         topic = weak_topic["topic"]
         readable_subject = normalize_subject_for_query(subject)
 
-        query = f"Explain the key concepts and common problem areas in {topic} for {readable_subject}, and what a student struggling with this topic should focus on."
+        if not tenant_id:
+            # Fail closed: Do not query vector database across tenant boundaries
+            recommendations.append(
+                {
+                    "subject": subject,
+                    "topic": topic,
+                    "recommendation": (
+                        f"Review foundational materials and consult your subject teacher "
+                        f"for additional practice exercises in {topic}."
+                    ),
+                    "sources": [],
+                }
+            )
+            continue
 
-        result = retrieve_and_generate(
-            query=query,
-            collection_name="study_materials",
-            n_results=n_results_per_topic,
+        query = (
+            f"Explain the key concepts and common problem areas in {topic} for "
+            f"{readable_subject}, and what a student struggling with this topic should focus on."
         )
 
-        recommendations.append(
-            {
-                "subject": subject,
-                "topic": topic,
-                "recommendation": result["answer"],
-                "sources": [
-                    {"title": s["title"], "subject": s["subject"]}
-                    for s in result["sources"]
-                ],
-            }
-        )
+        try:
+            result = retrieve_and_generate(
+                query=query,
+                collection_name="study_materials",
+                n_results=n_results_per_topic,
+                institution_id=tenant_id,
+            )
+            recommendations.append(
+                {
+                    "subject": subject,
+                    "topic": topic,
+                    "recommendation": result["answer"],
+                    "sources": [
+                        {"title": s["title"], "subject": s["subject"]}
+                        for s in result["sources"]
+                    ],
+                }
+            )
+        except Exception:
+            recommendations.append(
+                {
+                    "subject": subject,
+                    "topic": topic,
+                    "recommendation": (
+                        f"Review foundational materials and practice problem sets for {topic}."
+                    ),
+                    "sources": [],
+                }
+            )
 
     return recommendations

@@ -1,10 +1,12 @@
+import os
 import uuid
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.admin.models import Timetable
 from app.core.database import get_db
 from app.student.models import HomeworkSubmission
 from app.student.schemas import (
@@ -26,7 +28,7 @@ from app.teacher.models import StudyMaterial
 from app.teacher.schemas import AssignmentRead
 from app.teacher.service import list_assignments
 from app.users.dependencies import require_role
-from app.users.models import User
+from app.users.models import StudentProfile, User
 
 router = APIRouter(prefix="/student", tags=["student"])
 
@@ -148,16 +150,84 @@ async def get_study_materials(
 @router.get("/study-materials/{material_id}/file")
 async def download_study_material_file(
     material_id: uuid.UUID,
-    current_user: User = Depends(require_role("student")),
+    current_user: User = Depends(require_role("student", "teacher", "admin")),
     db: AsyncSession = Depends(get_db),
 ):
+    """
+    Downloads a study material file with IDOR protection:
+    - Verifies the study material exists.
+    - If caller is a student:
+        - Resolves the student's profile and class section.
+        - Verifies that the student's class section is taught this subject on the Timetable.
+    - If caller is a teacher:
+        - Verifies that the teacher uploaded the material or teaches that subject.
+    - Universal authorization for administrators.
+    - Validates file presence on disk.
+    """
     result = await db.execute(
         select(StudyMaterial).where(StudyMaterial.id == material_id)
     )
     material = result.scalar_one_or_none()
 
     if material is None:
-        raise HTTPException(status_code=404, detail="Study material not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Study material not found",
+        )
+
+    if current_user.role == "student":
+        prof_res = await db.execute(
+            select(StudentProfile).where(StudentProfile.user_id == current_user.id)
+        )
+        profile = prof_res.scalar_one_or_none()
+        student_section = (
+            f"{profile.grade}-{profile.section}"
+            if profile and profile.grade and profile.section
+            else None
+        )
+        if not student_section:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Student is not assigned to any grade/section",
+            )
+
+        # Check if student's section is scheduled for this subject by this teacher or in this section
+        tt_res = await db.execute(
+            select(Timetable.id)
+            .where(
+                Timetable.class_section == student_section,
+                Timetable.subject.ilike(material.subject),
+            )
+            .limit(1)
+        )
+        if not tt_res.scalar_one_or_none():
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Authorization denied: You are not enrolled in any class section for this subject.",
+            )
+
+    elif current_user.role == "teacher":
+        is_owner = material.teacher_id == current_user.id
+        if not is_owner:
+            tt_res = await db.execute(
+                select(Timetable.id)
+                .where(
+                    Timetable.teacher_id == current_user.id,
+                    Timetable.subject.ilike(material.subject),
+                )
+                .limit(1)
+            )
+            if not tt_res.scalar_one_or_none():
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Authorization denied: You do not teach this subject.",
+                )
+
+    if not os.path.exists(material.file_path):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Study material file not found on disk",
+        )
 
     return FileResponse(
         path=material.file_path,

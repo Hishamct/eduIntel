@@ -34,14 +34,15 @@ This inventory documents all **57 endpoints** across the **16 routers** mounted 
 
 ---
 
-## 2. Authentication Router (`/api/auth`)
+## 2. Authentication Router (`/auth`)
 
 | Method | Path | Auth / Role | Description | Request Body | Response |
 |---|---|:---:|---|---|---|
-| `POST` | `/api/auth/signup` | Public | Register new user account | `UserCreate` (email, password, role) | `201 Created` (`UserResponse`) |
-| `POST` | `/api/auth/login` | Public | Authenticate user & issue JWT | `OAuth2PasswordRequestForm` | `200 OK` (`TokenResponse`) |
-| `POST` | `/api/auth/forgot-password`| Public | Request password reset token | `ForgotPasswordRequest` (email) | `200 OK` (`MessageResponse`) |
-| `POST` | `/api/auth/reset-password` | Public | Reset password using token | `ResetPasswordRequest` (token, new_pw) | `200 OK` (`MessageResponse`) |
+| `POST` | `/auth/signup` | **Disabled** | Public self-registration disabled (SEC-02) | None | `403 Forbidden` |
+| `POST` | `/auth/login` | Public | Authenticate user, set `HttpOnly` cookie & return JWT (SEC-10) | `LoginRequest` (email, password) | `200 OK` (`TokenResponse` + Cookie) |
+| `POST` | `/auth/logout` | Public | Clear `HttpOnly` authentication cookie (SEC-10) | None | `200 OK` (`{"message": "Successfully logged out"}`) |
+| `POST` | `/auth/password-reset/request` | Public (Rate Limited) | Request reset link (5 req/min, background SMTP, SEC-01) | `PasswordResetRequest` (email) | `200 OK` (`{"message": "..."}`) |
+| `POST` | `/auth/password-reset/confirm` | Public | Reset password using SHA-256 verified token (SEC-01) | `PasswordResetConfirm` (token, new_pw)| `200 OK` (`{"message": "..."}`) |
 
 ---
 
@@ -98,6 +99,9 @@ This inventory documents all **57 endpoints** across the **16 routers** mounted 
 | `GET` | `/api/admin/fees` | `admin` | List student fee records | `?status=pending/overdue` | `200 OK` (`List[FeeItem]`) |
 | `POST` | `/api/admin/fees` | `admin` | Create or update fee installment | `FeeRecordCreate` | `201 Created` (`FeeItem`) |
 | `POST` | `/api/admin/attendance` | `admin` | Record daily attendance roster | `AttendanceBatchCreate` | `201 Created` (`BatchAttendanceResponse`) |
+| `POST` | `/admin/teachers` | `admin` | Provision new teacher account (SEC-02) | `AdminTeacherCreate` (email, password, name, department) | `201 Created` (`TeacherProfileOut`) |
+| `POST` | `/admin/students` | `admin` | Provision new student account (SEC-02) | `AdminStudentCreate` (email, password, name, grade, section) | `201 Created` (`StudentProfileOut`) |
+| `POST` | `/admin/administrators` | `admin` | Provision additional administrator (SEC-02) | `AdminCreate` (email, password, name) | `201 Created` (`AdminProfileOut`) |
 | `POST` | `/api/admin/assistant/query`| `admin`| LangGraph Admin Assistant QA | `AgentQueryRequest` (prompt) | `200 OK` (`AgentQueryResponse`) |
 
 ---
@@ -113,34 +117,39 @@ This inventory documents all **57 endpoints** across the **16 routers** mounted 
 
 ---
 
-## 8. OCR Processing Router (`/api/ocr`)
+## 8. OCR Processing Router (`/ocr`)
 
 | Method | Path | Auth / Role | Description | Request Body | Response |
 |---|---|:---:|---|---|---|
-| `POST` | `/api/ocr/extract` | Authenticated | Extract text from uploaded image/PDF | Multipart (`file`, `clean_text=true`) | `200 OK` (`OCRExtractResult`) |
-| `GET` | `/api/ocr/status/{task_id}`| Authenticated | Get OCR extraction status | None | `200 OK` (`OCRStatusResponse`) |
+| `POST` | `/ocr/extract` | Authenticated | Extract text (5 MB limit, magic bytes, concurrency semaphore, SEC-05) | Multipart (`file`, `clean_text=true`) | `200 OK` (`OCRExtractResult`) |
+| `GET` | `/ocr/status/{task_id}`| Authenticated | Get OCR extraction status | None | `200 OK` (`OCRStatusResponse`) |
 
 ---
 
-## 9. RAG & Vector Router (`/api/rag`)
+## 9. RAG & Vector Router (`/rag`)
 
 | Method | Path | Auth / Role | Description | Request Body | Response |
 |---|---|:---:|---|---|---|
-| `POST` | `/api/rag/ingest` | `teacher`/`admin` | Ingest document chunks into ChromaDB | `RAGIngestRequest` (collection, text) | `201 Created` (`IngestResult`) |
-| `POST` | `/api/rag/query` | Authenticated | Search vector collection | `RAGQueryRequest` (query, collection, top_k) | `200 OK` (`RAGQueryResult`) |
-| `GET` | `/api/rag/collections` | `admin` | List active ChromaDB collections | None | `200 OK` (`List[CollectionInfo]`) |
-| `DELETE`| `/api/rag/documents/{doc_id}`| `admin` | Remove document from vector index | None | `204 No Content` |
+| `POST` | `/rag/ingest` | `teacher`/`admin` | Ingest chunks tagged with `institution_id` (SEC-08) | `RAGIngestRequest` (collection, text) | `201 Created` (`IngestResult`) |
+| `POST` | `/rag/query` | Authenticated | Search vector collection with mandatory tenant filter (SEC-08) | `RAGQueryRequest` (query, collection, top_k) | `200 OK` (`RAGQueryResult`) |
+| `GET` | `/rag/recommendations/{student_id}` | Authenticated | Topic recommendations with tenant isolation (SEC-08) | None | `200 OK` (`List[RAGChunk]`) |
+| `GET` | `/rag/debug-query` | `admin` | Debug retrieval with tenant filter (SEC-08) | `?query=...` | `200 OK` (`DebugQueryResult`) |
+| `GET` | `/rag/collections` | `admin` | List active ChromaDB collections | None | `200 OK` (`List[CollectionInfo]`) |
+| `DELETE`| `/rag/documents/{doc_id}`| `admin` | Remove document from vector index | None | `204 No Content` |
 
 ---
 
-## 10. Machine Learning Router (`/api/ml`)
+## 10. Machine Learning Router (`/ml`)
 
 | Method | Path | Auth / Role | Description | Request Body | Response |
 |---|---|:---:|---|---|---|
-| `GET` | `/api/ml/diagnose/{student_id}` | `teacher`/`admin` | At-risk prediction & SHAP factors | None | `200 OK` (`RiskDiagnosisResponse`) |
-| `GET` | `/api/ml/weak-topics/{student_id}`| `teacher`/`admin` | Predict student's weak topics | None | `200 OK` (`WeakTopicsResponse`) |
-| `POST` | `/api/ml/worksheet/generate` | `teacher` | Generate targeted practice questions | `WorksheetGenerateRequest` (student_id, topic)| `200 OK` (`WorksheetResponse`) |
-| `POST` | `/api/ml/retrain` | `admin` | Trigger offline XGBoost retraining | `RetrainParams` | `202 Accepted` (`RetrainJobStatus`) |
+| `GET` | `/ml/diagnose/{student_id}` | `teacher`/`admin` | At-risk prediction & SHAP factors (timetable section check, SEC-07) | None | `200 OK` (`RiskDiagnosisResponse`) |
+| `GET` | `/ml/predict/at-risk/{student_id}` | `teacher`/`admin` | Binary risk prediction (timetable section check, SEC-07) | None | `200 OK` (`RiskPredictionResponse`) |
+| `GET` | `/ml/predict/weak-topics/{student_id}`| `teacher`/`admin` | Predict weak topics (timetable section check, SEC-07) | None | `200 OK` (`WeakTopicsResponse`) |
+| `GET` | `/ml/explain/at-risk/{student_id}` | `teacher`/`admin` | SHAP explanation breakdown (timetable section check, SEC-07) | None | `200 OK` (`SHAPExplanationResponse`) |
+| `GET` | `/ml/recommend-topic` | `teacher`/`admin` | Pedagogical recommendations for weak topic | `?subject=...&topic=...` | `200 OK` (`TopicRecommendation`) |
+| `POST` | `/ml/worksheet/generate` | `teacher` | Generate targeted practice questions | `WorksheetGenerateRequest` (student_id, topic)| `200 OK` (`WorksheetResponse`) |
+| `POST` | `/ml/retrain` | `admin` | Trigger offline XGBoost retraining | `RetrainParams` | `202 Accepted` (`RetrainJobStatus`) |
 
 ---
 
@@ -148,17 +157,17 @@ This inventory documents all **57 endpoints** across the **16 routers** mounted 
 
 | Method | Path | Auth / Role | Description | Request Body | Response |
 |---|---|:---:|---|---|---|
-| `POST` | `/api/portal/assistant/query` | Authenticated | Chat with Portal Help Assistant | `HelpQueryRequest` (message) | `200 OK` (`HelpQueryResponse`) |
-| `POST` | `/api/admin/assistant/query` | `admin` | Chat with Admin AI Assistant | `AdminQueryRequest` (message) | `200 OK` (`AdminQueryResponse`) |
+| `POST` | `/portal/assistant/query` | Authenticated | Chat with Portal Help Assistant | `HelpQueryRequest` (message) | `200 OK` (`HelpQueryResponse`) |
+| `POST` | `/agents/admin-assistant/chat` | `admin` | LangGraph Admin Assistant (tenant isolation, aggregation guard, SEC-09) | `AdminAssistantChatRequest` | `200 OK` (`AdminAssistantChatResponse`) |
 
 ---
 
-## 12. Parent Reporting Router (`/api/reports`)
+## 12. Parent Reporting Router (`/reports`)
 
 | Method | Path | Auth / Role | Description | Request Body | Response |
 |---|---|:---:|---|---|---|
-| `POST` | `/api/reports/parent-report/{student_id}`| `admin`/`teacher` | Generate & email report | `ReportTriggerRequest` (send_email=true) | `200 OK` (`ParentReportSummary`) |
-| `GET` | `/api/reports/preview/{student_id}` | `admin`/`teacher` | Preview generated narrative report | None | `200 OK` (`ParentReportPreview`) |
+| `POST` | `/reports/parent-report/{student_id}`| `admin`/`teacher` | Generate & email report (timetable check, verified parent_email, SEC-03) | `ParentReportRequest` | `200 OK` (`ParentReportSummary`) |
+| `GET` | `/reports/preview/{student_id}` | `admin`/`teacher` | Preview generated narrative report | None | `200 OK` (`ParentReportPreview`) |
 
 ---
 
