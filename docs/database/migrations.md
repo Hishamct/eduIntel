@@ -20,36 +20,36 @@ This document specifies the migration architecture, revision history, and schema
       await connectable.dispose()
   ```
 - **Tracking Table**: Current migration state is tracked in the `alembic_version` table in PostgreSQL.
-- **Current Head Revision**: `d4f6a2b5e0c7` (`add_agent_trace_logs_table.py`).
+- **Current Head Revision**: `d4f6a2b5e0c7` (`0020_d4f6a2b5e0c7_add_agent_trace_logs_table.py`).
 
 ---
 
 ## 2. Migration Revision History (20 Revisions)
 
-Below is the chronological sequence of migrations shaping the current database schema:
+Below is the chronological sequence of migrations shaping the current database schema, organized with standardized 4-digit sequential numeric prefixes (`0001_` through `0020_`):
 
 | Step | Revision ID | Down Revision | Script Name | Core DDL Operations |
 |:---:|---|---|---|---|
-| **1** | `f987f78a5191` | None | `create_users_and_profile_tables.py` | Creates `users`, `student_profiles`, `teacher_profiles`, `admin_profiles`. |
-| **2** | `461bf0704035` | `f987f78a5191` | `create_password_reset_tokens_table.py` | Creates `password_reset_tokens` table with token index and expiry. |
-| **3** | `95aa2b163349` | `461bf0704035` | `add_name_to_users_and_contact_fields_to_.py` | Adds name, phone, and emergency contact columns to user profiles. |
-| **4** | `5e2def47610c` | `95aa2b163349` | `create_assignments_table.py` | Creates `assignments` table with teacher foreign key and due dates. |
-| **5** | `9456897b8a02` | `5e2def47610c` | `create_homework_submission_table.py` | Creates `homework_submissions` table for file uploads and status. |
-| **6** | `8c280b7df739` | `9456897b8a02` | `add_extracted_text_to_homework_.py` | Adds `ocr_extracted_text` column to `homework_submissions`. |
-| **7** | `88c1537528f3` | `8c280b7df739` | `add_grading_fields_to_homework_.py` | Adds `marks_obtained`, `teacher_feedback`, and `graded_by` columns. |
-| **8** | `efdeec24077b` | `88c1537528f3` | `create_doubt_threads_and_messages_tables.py` | Creates `doubt_threads` and `doubt_messages` for the student forum. |
-| **9** | `847a7f61eae6` | `efdeec24077b` | `add_study_materials_table.py` | Creates `study_materials` table for teacher-uploaded notes and PDFs. |
-| **10**| `29fc63b28fe9` | `847a7f61eae6` | `add_server_defaults_to_study_materials_.py` | Adds `server_default` for timestamps and boolean indexing flags. |
-| **11**| `3969e70ec607` | `29fc63b28fe9` | `add_exam_results_table.py` | Creates `exam_results` table for historical student score tracking. |
-| **12**| `7cb17547e10e` | `3969e70ec607` | `create_timetable_and_salary_tables.py` | Creates `timetable_entries` and `salary_records` tables. |
-| **13**| `851a60e35d84` | `7cb17547e10e` | `add_fee_records_and_attendance_records_.py`| Creates `fee_records` and `attendance_records` tables. |
-| **14**| `2d2e369dccb7` | `851a60e35d84` | `add_announcements_table.py` | Creates `announcements` table for institute-wide broadcast notifications. |
-| **15**| `361abb3e7a6e` | `2d2e369dccb7` | `add_audit_logs_table.py` | Creates base `audit_logs` table for tracking system actions. |
-| **16**| `a1b2c3d4e5f6` | `361abb3e7a6e` | `add_audit_log_redaction_columns.py` | Adds `pii_redactions_count` and `prompt_injection_detected` columns. |
-| **17**| `b2c3d4e5f6a7` | `a1b2c3d4e5f6` | `add_audit_log_socratic_columns.py` | Adds `is_socratic_redirect` flag to `doubt_messages` and audit logs. |
-| **18**| `c3d4e5f6a7b8` | `b2c3d4e5f6a7` | `add_llm_usage_logs_table.py` | Creates `llm_cost_logs` table tracking token usage and cost in INR (₹). |
-| **19**| `7efa432136f2` | `c3d4e5f6a7b8` | `make_datetime_columns_timezone_aware.py` | Converts all timestamp columns across tables to `TIMESTAMPTZ`. |
-| **20**| `d4f6a2b5e0c7` | `7efa432136f2` | `add_agent_trace_logs_table.py` | **(HEAD)** Creates `agent_trace_logs` for LangGraph node execution telemetry. |
+| **1** | `f987f78a5191` | None | `0001_f987f78a5191_create_users_and_profile_tables.py` | Creates `users`, `student_profiles`, `teacher_profiles`, `admin_profiles`. |
+| **2** | `461bf0704035` | `f987f78a5191` | `0002_461bf0704035_create_password_reset_tokens_table.py` | Creates `password_reset_tokens` table with token index and expiry. |
+| **3** | `7efa432136f2` | `461bf0704035` | `0003_7efa432136f2_make_datetime_columns_timezone_aware.py` | Converts all timestamp columns across tables to `TIMESTAMPTZ`. |
+| **4** | `9456897b8a02` | `7efa432136f2` | `0004_9456897b8a02_create_homework_submission_table.py` | Creates `homework_submissions` table for file uploads and status. |
+| **5** | `efdeec24077b` | `9456897b8a02` | `0005_efdeec24077b_create_doubt_threads_and_messages_tables.py` | Creates `doubt_threads` and `doubt_messages` for the student forum. |
+| **6** | `88c1537528f3` | `efdeec24077b` | `0006_88c1537528f3_add_grading_fields_to_homework_.py` | Adds `marks_obtained`, `teacher_feedback`, and `graded_by` columns. |
+| **7** | `5e2def47610c` | `88c1537528f3` | `0007_5e2def47610c_create_assignments_table.py` | Creates `assignments` table with teacher foreign key and due dates. |
+| **8** | `7cb17547e10e` | `5e2def47610c` | `0008_7cb17547e10e_create_timetable_and_salary_tables.py` | Creates `timetable_entries` and `salary_records` tables. |
+| **9** | `95aa2b163349` | `7cb17547e10e` | `0009_95aa2b163349_add_name_to_users_and_contact_fields_to_.py` | Adds name, phone, and emergency contact columns to user profiles. |
+| **10**| `8c280b7df739` | `95aa2b163349` | `0010_8c280b7df739_add_extracted_text_to_homework_.py` | Adds `ocr_extracted_text` column to `homework_submissions`. |
+| **11**| `847a7f61eae6` | `8c280b7df739` | `0011_847a7f61eae6_add_study_materials_table.py` | Creates `study_materials` table for teacher-uploaded notes and PDFs. |
+| **12**| `29fc63b28fe9` | `847a7f61eae6` | `0012_29fc63b28fe9_add_server_defaults_to_study_materials_.py` | Adds `server_default` for timestamps and boolean indexing flags. |
+| **13**| `2d2e369dccb7` | `29fc63b28fe9` | `0013_2d2e369dccb7_add_announcements_table.py` | Creates `announcements` table for institute-wide broadcast notifications. |
+| **14**| `851a60e35d84` | `2d2e369dccb7` | `0014_851a60e35d84_add_fee_records_and_attendance_records_.py`| Creates `fee_records` and `attendance_records` tables. |
+| **15**| `3969e70ec607` | `851a60e35d84` | `0015_3969e70ec607_add_exam_results_table.py` | Creates `exam_results` table for historical student score tracking. |
+| **16**| `361abb3e7a6e` | `3969e70ec607` | `0016_361abb3e7a6e_add_audit_logs_table.py` | Creates base `audit_logs` table for tracking system actions. |
+| **17**| `a1c3f9e2b7d4` | `361abb3e7a6e` | `0017_a1c3f9e2b7d4_add_audit_log_redaction_columns.py` | Adds `pii_redactions_count` and `prompt_injection_detected` columns. |
+| **18**| `b2d4e0f3c8a5` | `a1c3f9e2b7d4` | `0018_b2d4e0f3c8a5_add_audit_log_socratic_columns.py` | Adds `is_socratic_redirect` flag to `doubt_messages` and audit logs. |
+| **19**| `c3e5f1a4d9b6` | `b2d4e0f3c8a5` | `0019_c3e5f1a4d9b6_add_llm_usage_logs_table.py` | Creates `llm_cost_logs` table tracking token usage and cost in INR (₹). |
+| **20**| `d4f6a2b5e0c7` | `c3e5f1a4d9b6` | `0020_d4f6a2b5e0c7_add_agent_trace_logs_table.py` | **(HEAD)** Creates `agent_trace_logs` for LangGraph node execution telemetry. |
 
 ---
 
@@ -95,8 +95,8 @@ During the Phase 0 and Phase 1 technical audits, the following migration hygiene
 
 1. **Duplicate User Model Definition**: Both `backend/app/auth/models.py` and `backend/app/users/models.py` define a `User` class mapping to `users`. While functionally identical, this creates potential schema drift when generating autogenerated migrations.
    - *Phase 3 Action*: Consolidate all user model declarations into `backend/app/users/models.py` and import into `auth`.
-2. **Revision Naming Consistency**: Revisions 16–18 and 20 used manual IDs (`add_agent_trace_logs_table.py`, etc.) rather than standard Alembic generated hexadecimal prefix hashes.
-   - *Phase 3 Action*: Standardize all future migration file names to `<hash>_<description>.py`.
+2. **Revision Naming Consistency (Resolved)**: Revisions 1–20 have been standardized with 4-digit sequential numeric prefixes (`0001_` through `0020_`) and their canonical revision hashes for immediate chronological discoverability and linear DAG tracking.
+   - *Phase 2 Action Completed*: Renamed all 20 historical version files to `<4-digit-index>_<hash>_<description>.py`. Future autogenerated migrations should continue this sequential numbering scheme.
 3. **Downgrade Verification**: Several early migrations lack complete `downgrade()` drop cascade logic for PostgreSQL enum types.
    - *Phase 3 Action*: Audit and execute bidirectional migration tests (`upgrade head` -> `downgrade base` -> `upgrade head`) in a temporary container.
 
