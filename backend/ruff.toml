@@ -38,6 +38,7 @@ extend-immutable-calls = [
     "fastapi.Depends", "fastapi.Query", "fastapi.File", "fastapi.Form",
     "fastapi.Path", "fastapi.Header", "fastapi.Cookie", "fastapi.Body", "fastapi.Security",
     "app.users.dependencies.require_role",
+    "app.core.tenant.require_tenant_role",
 ]
 
 [format]

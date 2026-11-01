@@ -23,7 +23,9 @@ class Settings(BaseSettings):
     TRUSTED_PROXIES: list[str] = ["127.0.0.1", "::1"]
 
     # Multi-Tenancy & Vector Isolation
-    DEFAULT_INSTITUTION_ID: str = "eduintel-pilot"
+    DEFAULT_PILOT_INSTITUTION_UUID: str = "00000000-0000-0000-0000-000000000001"
+    DEFAULT_PILOT_INSTITUTION_SLUG: str = "eduintel-pilot"
+    DEFAULT_INSTITUTION_ID: str = "00000000-0000-0000-0000-000000000001"
     ENABLE_LEGACY_SINGLE_TENANT_NAMESPACE: bool = False
 
     # Authentication & Cookie Security (SEC-10)
