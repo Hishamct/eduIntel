@@ -36,8 +36,7 @@ from app.admin.service import (
     update_student_profile,
 )
 from app.auth.schemas import UserResponse
-from app.core.database import get_db
-from app.core.tenant import get_trusted_tenant_id
+from app.core.tenant import TenantContext, get_tenant_db, require_tenant_role
 from app.users.dependencies import require_role
 from app.users.models import User
 
@@ -49,21 +48,12 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 @router.get("/dashboard")
 async def admin_dashboard(
     current_user: User = Depends(require_role("admin")),
-    db: AsyncSession = Depends(get_db),
+    tenant: TenantContext = Depends(require_tenant_role("admin")),
+    db: AsyncSession = Depends(get_tenant_db),
 ):
-    trusted_tenant = get_trusted_tenant_id(current_user)
-    if not trusted_tenant:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Tenant context required for dashboard access.",
-        )
-    try:
-        summary = await get_admin_dashboard_summary(db=db, tenant_id=trusted_tenant)
-    except TenantAggregationBlockedError as e:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=str(e),
-        ) from None
+    summary = await get_admin_dashboard_summary(
+        db=db, institution_id=tenant.institution_id
+    )
     display_name = current_user.name or current_user.email.split("@")[0]
     return {
         "message": f"Welcome, {display_name}",
@@ -79,16 +69,18 @@ async def admin_dashboard(
 async def post_timetable_entry(
     payload: TimetableEntryCreate,
     current_user: User = Depends(require_role("admin")),
-    db: AsyncSession = Depends(get_db),
+    tenant: TenantContext = Depends(require_tenant_role("admin")),
+    db: AsyncSession = Depends(get_tenant_db),
 ):
     entry = await create_timetable_entry(
         db=db,
-        created_by=current_user.id,
+        created_by=tenant.user_id,
         class_section=payload.class_section,
         day_of_week=payload.day_of_week,
         period=payload.period,
         subject=payload.subject,
         teacher_id=payload.teacher_id,
+        institution_id=tenant.institution_id,
     )
     return entry
 
@@ -97,9 +89,14 @@ async def post_timetable_entry(
 async def get_timetable(
     class_section: str | None = None,
     current_user: User = Depends(require_role("admin")),
-    db: AsyncSession = Depends(get_db),
+    tenant: TenantContext = Depends(require_tenant_role("admin")),
+    db: AsyncSession = Depends(get_tenant_db),
 ):
-    entries = await list_timetable(db=db, class_section=class_section)
+    entries = await list_timetable(
+        db=db,
+        class_section=class_section,
+        institution_id=tenant.institution_id,
+    )
     return entries
 
 
@@ -107,17 +104,19 @@ async def get_timetable(
 async def post_salary_record(
     payload: SalaryRecordCreate,
     current_user: User = Depends(require_role("admin")),
-    db: AsyncSession = Depends(get_db),
+    tenant: TenantContext = Depends(require_tenant_role("admin")),
+    db: AsyncSession = Depends(get_tenant_db),
 ):
     record = await create_salary_record(
         db=db,
-        created_by=current_user.id,
+        created_by=tenant.user_id,
         teacher_id=payload.teacher_id,
         month=payload.month,
         base_salary=payload.base_salary,
         bonus=payload.bonus,
         deduction=payload.deduction,
         payment_status=payload.payment_status,
+        institution_id=tenant.institution_id,
     )
     return record
 
@@ -126,18 +125,27 @@ async def post_salary_record(
 async def get_salary_records(
     teacher_id: uuid.UUID | None = None,
     current_user: User = Depends(require_role("admin")),
-    db: AsyncSession = Depends(get_db),
+    tenant: TenantContext = Depends(require_tenant_role("admin")),
+    db: AsyncSession = Depends(get_tenant_db),
 ):
-    records = await list_salary_records(db=db, teacher_id=teacher_id)
+    records = await list_salary_records(
+        db=db,
+        teacher_id=teacher_id,
+        institution_id=tenant.institution_id,
+    )
     return records
 
 
 @router.get("/teachers", response_model=list[TeacherSummary])
 async def get_teachers(
     current_user: User = Depends(require_role("admin")),
-    db: AsyncSession = Depends(get_db),
+    tenant: TenantContext = Depends(require_tenant_role("admin")),
+    db: AsyncSession = Depends(get_tenant_db),
 ):
-    teachers = await list_teachers(db=db)
+    teachers = await list_teachers(
+        db=db,
+        institution_id=tenant.institution_id,
+    )
     return teachers
 
 
@@ -148,10 +156,12 @@ async def post_student(
     payload: StudentEnrollCreate,
     request: Request,
     current_user: User = Depends(require_role("admin")),
-    db: AsyncSession = Depends(get_db),
+    tenant: TenantContext = Depends(require_tenant_role("admin")),
+    db: AsyncSession = Depends(get_tenant_db),
 ):
     student = await enroll_student(
         db=db,
+        institution_id=tenant.institution_id,
         email=payload.email,
         password=payload.password,
         name=payload.name,
@@ -166,7 +176,7 @@ async def post_student(
     )
     logger.info(
         "AUDIT: User provisioned | actor_id=%s | target_id=%s | target_email=%s | role=%s | ip=%s",
-        current_user.id,
+        tenant.user_id,
         student["id"],
         student["email"],
         "student",
@@ -182,13 +192,19 @@ async def create_teacher(
     data: StaffProvisionRequest,
     request: Request,
     current_user: User = Depends(require_role("admin")),
-    db: AsyncSession = Depends(get_db),
+    tenant: TenantContext = Depends(require_tenant_role("admin")),
+    db: AsyncSession = Depends(get_tenant_db),
 ):
     """Authenticated institutional administrator provisions a teacher account."""
-    new_user = await create_staff_user(db, data, role="teacher")
+    new_user = await create_staff_user(
+        db=db,
+        data=data,
+        role="teacher",
+        institution_id=tenant.institution_id,
+    )
     logger.info(
         "AUDIT: User provisioned | actor_id=%s | target_id=%s | target_email=%s | role=%s | ip=%s",
-        current_user.id,
+        tenant.user_id,
         new_user.id,
         new_user.email,
         new_user.role,
@@ -206,13 +222,19 @@ async def create_administrator(
     data: StaffProvisionRequest,
     request: Request,
     current_user: User = Depends(require_role("admin")),
-    db: AsyncSession = Depends(get_db),
+    tenant: TenantContext = Depends(require_tenant_role("admin")),
+    db: AsyncSession = Depends(get_tenant_db),
 ):
     """Authenticated institutional administrator provisions an additional administrator account."""
-    new_user = await create_staff_user(db, data, role="admin")
+    new_user = await create_staff_user(
+        db=db,
+        data=data,
+        role="admin",
+        institution_id=tenant.institution_id,
+    )
     logger.info(
         "AUDIT: User provisioned | actor_id=%s | target_id=%s | target_email=%s | role=%s | ip=%s",
-        current_user.id,
+        tenant.user_id,
         new_user.id,
         new_user.email,
         new_user.role,
@@ -224,9 +246,13 @@ async def create_administrator(
 @router.get("/students", response_model=list[StudentRead])
 async def get_students(
     current_user: User = Depends(require_role("admin")),
-    db: AsyncSession = Depends(get_db),
+    tenant: TenantContext = Depends(require_tenant_role("admin")),
+    db: AsyncSession = Depends(get_tenant_db),
 ):
-    students = await list_students(db=db)
+    students = await list_students(
+        db=db,
+        institution_id=tenant.institution_id,
+    )
     return students
 
 
@@ -235,11 +261,13 @@ async def patch_student(
     student_id: uuid.UUID,
     payload: StudentUpdate,
     current_user: User = Depends(require_role("admin")),
-    db: AsyncSession = Depends(get_db),
+    tenant: TenantContext = Depends(require_tenant_role("admin")),
+    db: AsyncSession = Depends(get_tenant_db),
 ):
     student = await update_student_profile(
         db=db,
         student_id=student_id,
+        institution_id=tenant.institution_id,
         grade=payload.grade,
         section=payload.section,
         roll_number=payload.roll_number,
@@ -255,16 +283,13 @@ async def patch_student(
 @router.get("/debug/student-teacher-counts")
 async def debug_student_teacher_counts(
     current_user: User = Depends(require_role("admin")),
-    db: AsyncSession = Depends(get_db),
+    tenant: TenantContext = Depends(require_tenant_role("admin")),
+    db: AsyncSession = Depends(get_tenant_db),
 ):
-    trusted_tenant = get_trusted_tenant_id(current_user)
-    if not trusted_tenant:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Tenant context required for administrative reporting.",
-        )
     try:
-        return await get_student_teacher_counts(db=db, tenant_id=trusted_tenant)
+        return await get_student_teacher_counts(
+            db=db, tenant_id=str(tenant.institution_id)
+        )
     except TenantAggregationBlockedError as e:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -276,16 +301,13 @@ async def debug_student_teacher_counts(
 async def debug_salary_summary(
     month: date | None = None,
     current_user: User = Depends(require_role("admin")),
-    db: AsyncSession = Depends(get_db),
+    tenant: TenantContext = Depends(require_tenant_role("admin")),
+    db: AsyncSession = Depends(get_tenant_db),
 ):
-    trusted_tenant = get_trusted_tenant_id(current_user)
-    if not trusted_tenant:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Tenant context required for administrative reporting.",
-        )
     try:
-        return await get_salary_summary(db=db, month=month, tenant_id=trusted_tenant)
+        return await get_salary_summary(
+            db=db, month=month, tenant_id=str(tenant.institution_id)
+        )
     except TenantAggregationBlockedError as e:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -297,17 +319,12 @@ async def debug_salary_summary(
 async def debug_timetable_coverage(
     class_section: str | None = None,
     current_user: User = Depends(require_role("admin")),
-    db: AsyncSession = Depends(get_db),
+    tenant: TenantContext = Depends(require_tenant_role("admin")),
+    db: AsyncSession = Depends(get_tenant_db),
 ):
-    trusted_tenant = get_trusted_tenant_id(current_user)
-    if not trusted_tenant:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Tenant context required for administrative reporting.",
-        )
     try:
         return await get_timetable_coverage(
-            db=db, class_section=class_section, tenant_id=trusted_tenant
+            db=db, class_section=class_section, tenant_id=str(tenant.institution_id)
         )
     except TenantAggregationBlockedError as e:
         raise HTTPException(
@@ -319,16 +336,13 @@ async def debug_timetable_coverage(
 @router.get("/debug/teacher-grading-performance")
 async def debug_teacher_grading_performance(
     current_user: User = Depends(require_role("admin")),
-    db: AsyncSession = Depends(get_db),
+    tenant: TenantContext = Depends(require_tenant_role("admin")),
+    db: AsyncSession = Depends(get_tenant_db),
 ):
-    trusted_tenant = get_trusted_tenant_id(current_user)
-    if not trusted_tenant:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Tenant context required for administrative reporting.",
-        )
     try:
-        return await get_teacher_grading_performance(db=db, tenant_id=trusted_tenant)
+        return await get_teacher_grading_performance(
+            db=db, tenant_id=str(tenant.institution_id)
+        )
     except TenantAggregationBlockedError as e:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -340,16 +354,13 @@ async def debug_teacher_grading_performance(
 async def debug_revenue_summary(
     month: date | None = None,
     current_user: User = Depends(require_role("admin")),
-    db: AsyncSession = Depends(get_db),
+    tenant: TenantContext = Depends(require_tenant_role("admin")),
+    db: AsyncSession = Depends(get_tenant_db),
 ):
-    trusted_tenant = get_trusted_tenant_id(current_user)
-    if not trusted_tenant:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Tenant context required for administrative reporting.",
-        )
     try:
-        return await get_revenue_summary(db=db, month=month, tenant_id=trusted_tenant)
+        return await get_revenue_summary(
+            db=db, month=month, tenant_id=str(tenant.institution_id)
+        )
     except TenantAggregationBlockedError as e:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -361,17 +372,12 @@ async def debug_revenue_summary(
 async def debug_attendance_stats(
     class_section: str | None = None,
     current_user: User = Depends(require_role("admin")),
-    db: AsyncSession = Depends(get_db),
+    tenant: TenantContext = Depends(require_tenant_role("admin")),
+    db: AsyncSession = Depends(get_tenant_db),
 ):
-    trusted_tenant = get_trusted_tenant_id(current_user)
-    if not trusted_tenant:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Tenant context required for administrative reporting.",
-        )
     try:
         return await get_attendance_stats(
-            db=db, class_section=class_section, tenant_id=trusted_tenant
+            db=db, class_section=class_section, tenant_id=str(tenant.institution_id)
         )
     except TenantAggregationBlockedError as e:
         raise HTTPException(

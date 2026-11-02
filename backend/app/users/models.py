@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import Boolean, Enum, ForeignKey, String
+from sqlalchemy import Boolean, Enum, ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -34,6 +34,9 @@ class StudentProfile(Base, TimestampMixin):
     __tablename__ = "student_profiles"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    institution_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("institutions.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
     user_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id"), unique=True, nullable=False
     )
@@ -45,6 +48,11 @@ class StudentProfile(Base, TimestampMixin):
     address: Mapped[str] = mapped_column(String, nullable=True)
     guardian_name: Mapped[str] = mapped_column(String, nullable=True)
     guardian_phone: Mapped[str] = mapped_column(String, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("institution_id", "roll_number", name="uq_student_profiles_institution_roll"),
+    )
+
     user: Mapped["User"] = relationship(back_populates="student_profile")
 
 
@@ -52,6 +60,9 @@ class TeacherProfile(Base, TimestampMixin):
     __tablename__ = "teacher_profiles"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    institution_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("institutions.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
     user_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id"), unique=True, nullable=False
     )
@@ -65,6 +76,9 @@ class AdminProfile(Base, TimestampMixin):
     __tablename__ = "admin_profiles"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    institution_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("institutions.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
     user_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id"), unique=True, nullable=False
     )

@@ -22,6 +22,7 @@ STUDY_MATERIAL_UPLOAD_DIR = "uploads/study_materials"
 
 async def grade_homework_submission(
     db: AsyncSession,
+    institution_id: uuid.UUID,
     submission_id: uuid.UUID,
     grader_id: uuid.UUID,
     score: int,
@@ -29,7 +30,10 @@ async def grade_homework_submission(
     feedback: str | None,
 ) -> HomeworkSubmission:
     result = await db.execute(
-        select(HomeworkSubmission).where(HomeworkSubmission.id == submission_id)
+        select(HomeworkSubmission).where(
+            HomeworkSubmission.id == submission_id,
+            HomeworkSubmission.institution_id == institution_id,
+        )
     )
     submission = result.scalar_one_or_none()
 
@@ -47,16 +51,22 @@ async def grade_homework_submission(
     submission.graded_by = grader_id
     submission.status = "graded"
 
-    await db.commit()
+    await db.flush()
     await db.refresh(submission)
 
     return submission
 
 
-async def list_all_submissions(db: AsyncSession, status_filter: str | None = None, limit: int = 100):
+async def list_all_submissions(
+    db: AsyncSession,
+    institution_id: uuid.UUID,
+    status_filter: str | None = None,
+    limit: int = 100,
+) -> list[TeacherHomeworkSubmissionRead]:
     query = (
         select(HomeworkSubmission)
         .options(selectinload(HomeworkSubmission.student))
+        .where(HomeworkSubmission.institution_id == institution_id)
         .order_by(HomeworkSubmission.created_at.desc())
     )
     if status_filter:
@@ -69,7 +79,7 @@ async def list_all_submissions(db: AsyncSession, status_filter: str | None = Non
         TeacherHomeworkSubmissionRead(
             id=s.id,
             student_id=s.student_id,
-            student_email=s.student.email,
+            student_email=s.student.email if s.student else "",
             subject=s.subject,
             title=s.title,
             description=s.description,
@@ -88,6 +98,7 @@ async def list_all_submissions(db: AsyncSession, status_filter: str | None = Non
 
 async def create_assignment(
     db: AsyncSession,
+    institution_id: uuid.UUID,
     created_by: uuid.UUID,
     title: str,
     subject: str,
@@ -97,6 +108,7 @@ async def create_assignment(
     instructions: str | None,
 ) -> Assignment:
     assignment = Assignment(
+        institution_id=institution_id,
         title=title,
         subject=subject,
         class_section=class_section,
@@ -106,31 +118,41 @@ async def create_assignment(
         created_by=created_by,
     )
     db.add(assignment)
-    await db.commit()
+    await db.flush()
     await db.refresh(assignment)
     return assignment
 
 
-async def list_assignments(db: AsyncSession, class_section: str | None = None):
-    query = select(Assignment).order_by(Assignment.created_at.desc())
+async def list_assignments(
+    db: AsyncSession,
+    institution_id: uuid.UUID,
+    class_section: str | None = None,
+) -> list[Assignment]:
+    query = select(Assignment).where(Assignment.institution_id == institution_id).order_by(Assignment.created_at.desc())
     if class_section:
         query = query.where(Assignment.class_section == class_section)
     result = await db.execute(query)
     return result.scalars().all()
 
 
-async def get_teacher_dashboard_summary(db: AsyncSession) -> dict:
+async def get_teacher_dashboard_summary(
+    db: AsyncSession,
+    institution_id: uuid.UUID,
+) -> dict:
     pending_result = await db.execute(
         select(func.count())
         .select_from(HomeworkSubmission)
-        .where(HomeworkSubmission.status == "submitted")
+        .where(
+            HomeworkSubmission.institution_id == institution_id,
+            HomeworkSubmission.status == "submitted",
+        )
     )
     pending_grading = pending_result.scalar_one()
 
     students_result = await db.execute(
-        select(func.count(func.distinct(HomeworkSubmission.student_id))).select_from(
-            HomeworkSubmission
-        )
+        select(func.count(func.distinct(HomeworkSubmission.student_id)))
+        .select_from(HomeworkSubmission)
+        .where(HomeworkSubmission.institution_id == institution_id)
     )
     students_assigned = students_result.scalar_one()
 
@@ -142,12 +164,12 @@ async def get_teacher_dashboard_summary(db: AsyncSession) -> dict:
 
 async def save_study_material(
     db: AsyncSession,
+    institution_id: uuid.UUID,
     teacher_id: uuid.UUID,
     subject: str,
     title: str,
     description: str | None,
     file: UploadFile,
-    tenant_id: str | None = None,
 ) -> StudyMaterial:
     os.makedirs(STUDY_MATERIAL_UPLOAD_DIR, exist_ok=True)
 
@@ -176,11 +198,10 @@ async def save_study_material(
             extracted_text = result["extracted_text"]
             extraction_method = "pdf_text"
         except HTTPException as e:
-            logger.warning(
-                f"PDF extraction failed for study material upload: {e.detail}"
-            )
+            logger.warning(f"PDF extraction failed for study material upload: {e.detail}")
 
     material = StudyMaterial(
+        institution_id=institution_id,
         teacher_id=teacher_id,
         subject=subject,
         title=title,
@@ -192,52 +213,58 @@ async def save_study_material(
     )
 
     db.add(material)
-    await db.commit()
+    await db.flush()
     await db.refresh(material)
 
     if extracted_text:
         try:
-            if tenant_id:
-                ingest_study_material(
-                    material_id=material.id,
-                    subject=material.subject,
-                    title=material.title,
-                    extracted_text=extracted_text,
-                    institution_id=tenant_id,
-                )
-            else:
-                logger.warning(
-                    f"RAG ingestion skipped for study material {material.id}: no trusted tenant context"
-                )
-        except Exception as e:
-            logger.warning(
-                f"RAG ingestion failed for study material {material.id}: {e}"
+            ingest_study_material(
+                material_id=material.id,
+                subject=material.subject,
+                title=material.title,
+                extracted_text=extracted_text,
+                institution_id=str(institution_id),
             )
+        except Exception as e:
+            logger.warning(f"RAG ingestion failed for study material {material.id}: {e}")
 
     return material
 
 
-async def list_study_materials(db: AsyncSession, subject: str | None = None):
-    query = select(StudyMaterial).order_by(StudyMaterial.created_at.desc())
+async def list_study_materials(
+    db: AsyncSession,
+    institution_id: uuid.UUID,
+    subject: str | None = None,
+) -> list[StudyMaterial]:
+    query = (
+        select(StudyMaterial)
+        .where(StudyMaterial.institution_id == institution_id)
+        .order_by(StudyMaterial.created_at.desc())
+    )
     if subject:
         query = query.where(StudyMaterial.subject == subject)
     result = await db.execute(query)
     return result.scalars().all()
 
 
-async def list_students_for_teacher(db: AsyncSession, class_section: str | None = None):
+async def list_students_for_teacher(
+    db: AsyncSession,
+    institution_id: uuid.UUID,
+    class_section: str | None = None,
+) -> list[dict]:
     query = (
         select(User, StudentProfile)
         .join(StudentProfile, StudentProfile.user_id == User.id)
-        .where(User.role == "student")
+        .where(
+            User.role == "student",
+            StudentProfile.institution_id == institution_id,
+        )
         .order_by(User.name)
     )
     if class_section:
         # class_section like "10-A" — StudentProfile stores grade/section separately
         grade, _, section = class_section.partition("-")
-        query = query.where(
-            StudentProfile.grade == grade, StudentProfile.section == section
-        )
+        query = query.where(StudentProfile.grade == grade, StudentProfile.section == section)
 
     result = await db.execute(query)
     rows = result.all()

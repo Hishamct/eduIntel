@@ -6,6 +6,7 @@ from sqlalchemy import Integer, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.llm_client import LLMCallUsage
+from app.core.tenant import PILOT_INSTITUTION_UUID
 from app.observability.models import AgentTraceLog, AuditLog, LLMUsageLog
 
 # Pricing constants — approximate, for reporting purposes only. The project
@@ -18,9 +19,7 @@ from app.observability.models import AgentTraceLog, AuditLog, LLMUsageLog
 # this rough placeholder.
 GEMINI_INPUT_COST_PER_1K_TOKENS_USD = 0.000075
 GEMINI_OUTPUT_COST_PER_1K_TOKENS_USD = 0.0003
-GROQ_INPUT_COST_PER_1K_TOKENS_USD = (
-    0.0  # Groq's hosted open-weight fallback model — free tier
-)
+GROQ_INPUT_COST_PER_1K_TOKENS_USD = 0.0  # Groq's hosted open-weight fallback model — free tier
 GROQ_OUTPUT_COST_PER_1K_TOKENS_USD = 0.0
 USD_TO_INR = 88.0  # approximate — update to the current rate for accurate ₹ figures
 
@@ -91,9 +90,7 @@ def estimate_cost_inr(usage: "LLMCallUsage") -> float | None:
     else:
         return None
 
-    cost_usd = (usage.input_tokens / 1000) * input_rate + (
-        usage.output_tokens / 1000
-    ) * output_rate
+    cost_usd = (usage.input_tokens / 1000) * input_rate + (usage.output_tokens / 1000) * output_rate
     return round(cost_usd * USD_TO_INR, 6)
 
 
@@ -109,6 +106,7 @@ async def log_ai_query(
     redacted_types: list[str] | None = None,
     was_socratic_redirected: bool = False,
     socratic_trigger_pattern: str | None = None,
+    institution_id: uuid.UUID | None = None,
 ) -> None:
     """
     Records one AI assistant query to the audit log. Called from the
@@ -132,6 +130,7 @@ async def log_ai_query(
     production. For the capstone, a straightforward await is fine.
     """
     entry = AuditLog(
+        institution_id=institution_id or PILOT_INSTITUTION_UUID,
         user_id=user_id,
         endpoint=endpoint,
         query_text=query_text,
@@ -144,7 +143,7 @@ async def log_ai_query(
         socratic_trigger_pattern=socratic_trigger_pattern,
     )
     db.add(entry)
-    await db.commit()
+    await db.flush()
 
 
 async def log_pii_redaction(
@@ -154,6 +153,7 @@ async def log_pii_redaction(
     query_text: str,
     redaction_count: int,
     redacted_types: list[str],
+    institution_id: uuid.UUID | None = None,
 ) -> None:
     """
     Thin convenience wrapper around log_ai_query for guardrail call sites
@@ -173,6 +173,7 @@ async def log_pii_redaction(
         was_redacted=redaction_count > 0,
         redaction_count=redaction_count,
         redacted_types=redacted_types,
+        institution_id=institution_id,
     )
 
 
@@ -183,6 +184,7 @@ async def log_socratic_redirect(
     query_text: str,
     was_socratic_redirected: bool,
     socratic_trigger_pattern: str | None,
+    institution_id: uuid.UUID | None = None,
 ) -> None:
     """
     Thin convenience wrapper around log_ai_query for the anti-cheating
@@ -200,11 +202,15 @@ async def log_socratic_redirect(
         block_reason=None,
         was_socratic_redirected=was_socratic_redirected,
         socratic_trigger_pattern=socratic_trigger_pattern,
+        institution_id=institution_id,
     )
 
 
 async def log_llm_usage(
-    db: AsyncSession, endpoint: str, usage: "LLMCallUsage | None"
+    db: AsyncSession,
+    endpoint: str,
+    usage: "LLMCallUsage | None",
+    institution_id: uuid.UUID | None = None,
 ) -> None:
     """
     Records one raw LLM call to llm_usage_logs. Call this right after
@@ -220,6 +226,7 @@ async def log_llm_usage(
         return
 
     entry = LLMUsageLog(
+        institution_id=institution_id or PILOT_INSTITUTION_UUID,
         endpoint=endpoint,
         provider=usage.provider,
         model=usage.model,
@@ -230,14 +237,18 @@ async def log_llm_usage(
         estimated_cost_inr=estimate_cost_inr(usage),
     )
     db.add(entry)
-    await db.commit()
+    await db.flush()
 
 
-async def get_llm_usage_summary(db: AsyncSession, since_days: int | None = 30) -> dict:
+async def get_llm_usage_summary(
+    db: AsyncSession,
+    institution_id: uuid.UUID,
+    since_days: int | None = 30,
+) -> dict:
     """
     Aggregate LLM usage for the Owner/Admin analytics dashboard: overall
-    totals plus a per-endpoint breakdown. since_days filters to the last
-    N days (None = all-time).
+    totals plus a per-endpoint breakdown, strictly scoped to caller's institution.
+    since_days filters to the last N days (None = all-time).
 
     Returns:
         {
@@ -262,10 +273,6 @@ async def get_llm_usage_summary(db: AsyncSession, since_days: int | None = 30) -
     if since_days is not None:
         cutoff = datetime.now(UTC) - timedelta(days=since_days)
 
-    base_query = select(LLMUsageLog)
-    if cutoff is not None:
-        base_query = base_query.where(LLMUsageLog.created_at >= cutoff)
-
     overall_stmt = select(
         func.count(LLMUsageLog.id),
         func.sum(LLMUsageLog.input_tokens),
@@ -273,24 +280,26 @@ async def get_llm_usage_summary(db: AsyncSession, since_days: int | None = 30) -
         func.avg(LLMUsageLog.latency_ms),
         func.sum(LLMUsageLog.estimated_cost_inr),
         func.sum(func.cast(LLMUsageLog.used_fallback, Integer)),
-    )
+    ).where(LLMUsageLog.institution_id == institution_id)
     if cutoff is not None:
         overall_stmt = overall_stmt.where(LLMUsageLog.created_at >= cutoff)
 
     overall_row = (await db.execute(overall_stmt)).one()
-    call_count, total_input, total_output, avg_latency, total_cost, fallback_count = (
-        overall_row
-    )
+    call_count, total_input, total_output, avg_latency, total_cost, fallback_count = overall_row
 
-    by_endpoint_stmt = select(
-        LLMUsageLog.endpoint,
-        func.count(LLMUsageLog.id),
-        func.avg(LLMUsageLog.latency_ms),
-        func.sum(LLMUsageLog.estimated_cost_inr),
-        func.sum(func.cast(LLMUsageLog.used_fallback, Integer)),
-        func.sum(LLMUsageLog.input_tokens),
-        func.sum(LLMUsageLog.output_tokens),
-    ).group_by(LLMUsageLog.endpoint)
+    by_endpoint_stmt = (
+        select(
+            LLMUsageLog.endpoint,
+            func.count(LLMUsageLog.id),
+            func.avg(LLMUsageLog.latency_ms),
+            func.sum(LLMUsageLog.estimated_cost_inr),
+            func.sum(func.cast(LLMUsageLog.used_fallback, Integer)),
+            func.sum(LLMUsageLog.input_tokens),
+            func.sum(LLMUsageLog.output_tokens),
+        )
+        .where(LLMUsageLog.institution_id == institution_id)
+        .group_by(LLMUsageLog.endpoint)
+    )
     if cutoff is not None:
         by_endpoint_stmt = by_endpoint_stmt.where(LLMUsageLog.created_at >= cutoff)
 
@@ -302,41 +311,34 @@ async def get_llm_usage_summary(db: AsyncSession, since_days: int | None = 30) -
             "call_count": call_count or 0,
             "total_input_tokens": int(total_input or 0),
             "total_output_tokens": int(total_output or 0),
-            "avg_latency_ms": round(float(avg_latency), 1)
-            if avg_latency is not None
-            else None,
-            "total_estimated_cost_inr": round(float(total_cost), 4)
-            if total_cost is not None
-            else 0.0,
+            "avg_latency_ms": round(float(avg_latency), 1) if avg_latency is not None else None,
+            "total_estimated_cost_inr": round(float(total_cost), 4) if total_cost is not None else 0.0,
             "fallback_count": int(fallback_count or 0),
         },
         "by_endpoint": [
             {
                 "endpoint": endpoint,
                 "call_count": count,
-                "avg_latency_ms": round(float(avg_lat), 1)
-                if avg_lat is not None
-                else None,
-                "total_estimated_cost_inr": round(float(cost), 4)
-                if cost is not None
-                else 0.0,
+                "avg_latency_ms": round(float(avg_lat), 1) if avg_lat is not None else None,
+                "total_estimated_cost_inr": round(float(cost), 4) if cost is not None else 0.0,
                 "fallback_count": int(fb or 0),
                 "total_input_tokens": int(in_tok or 0),
                 "total_output_tokens": int(out_tok or 0),
             }
             for endpoint, count, avg_lat, cost, fb, in_tok, out_tok in by_endpoint_rows
         ],
-        "gemini_quota": await _get_gemini_quota_status(db),
-        "groq_quota": await _get_groq_quota_status(db),
+        "gemini_quota": await _get_gemini_quota_status(db, institution_id),
+        "groq_quota": await _get_groq_quota_status(db, institution_id),
     }
 
 
 async def log_agent_trace(
     db: AsyncSession,
-    trace_id: str,
+    trace_id: str | uuid.UUID,
     agent_name: str,
     session_id: str,
     trace_steps: list[dict],
+    institution_id: uuid.UUID | None = None,
 ) -> None:
     """
     Persists one agent run's step-by-step trace in a single batch — call
@@ -353,10 +355,16 @@ async def log_agent_trace(
     if not trace_steps:
         return
 
+    try:
+        trace_uuid = uuid.UUID(str(trace_id)) if isinstance(trace_id, str) else trace_id
+    except (ValueError, AttributeError):
+        trace_uuid = uuid.uuid4()
+
     for step in trace_steps:
         db.add(
             AgentTraceLog(
-                trace_id=trace_id,
+                institution_id=institution_id or PILOT_INSTITUTION_UUID,
+                trace_id=trace_uuid,
                 agent_name=agent_name,
                 session_id=session_id,
                 node_name=step["node_name"],
@@ -366,17 +374,21 @@ async def log_agent_trace(
                 error_message=step.get("error_message"),
             )
         )
-    await db.commit()
+    await db.flush()
 
 
-async def get_agent_trace_summary(db: AsyncSession, since_days: int = 30) -> dict:
+async def get_agent_trace_summary(
+    db: AsyncSession,
+    institution_id: uuid.UUID,
+    since_days: int = 30,
+) -> dict:
     """
     Aggregate view for the admin dashboard: per (agent_name, node_name)
     call count / avg / max duration and error count over the last
-    since_days days, plus a run count per agent (distinct trace_id) and
-    the 20 most recently active traces so a reviewer can pull up an
-    actual run's full step list via get_agent_trace_detail rather than
-    only ever seeing aggregates.
+    since_days days, strictly scoped to caller's institution, plus a run count
+    per agent (distinct trace_id) and the 20 most recently active traces so
+    a reviewer can pull up an actual run's full step list via get_agent_trace_detail
+    rather than only ever seeing aggregates.
     """
     since = datetime.now(UTC) - timedelta(days=since_days)
 
@@ -389,7 +401,10 @@ async def get_agent_trace_summary(db: AsyncSession, since_days: int = 30) -> dic
             func.max(AgentTraceLog.duration_ms),
             func.sum(case((AgentTraceLog.status == "error", 1), else_=0)),
         )
-        .where(AgentTraceLog.created_at >= since)
+        .where(
+            AgentTraceLog.institution_id == institution_id,
+            AgentTraceLog.created_at >= since,
+        )
         .group_by(AgentTraceLog.agent_name, AgentTraceLog.node_name)
     )
     node_rows = (await db.execute(node_stats_stmt)).all()
@@ -407,10 +422,11 @@ async def get_agent_trace_summary(db: AsyncSession, since_days: int = 30) -> dic
     ]
 
     run_count_stmt = (
-        select(
-            AgentTraceLog.agent_name, func.count(func.distinct(AgentTraceLog.trace_id))
+        select(AgentTraceLog.agent_name, func.count(func.distinct(AgentTraceLog.trace_id)))
+        .where(
+            AgentTraceLog.institution_id == institution_id,
+            AgentTraceLog.created_at >= since,
         )
-        .where(AgentTraceLog.created_at >= since)
         .group_by(AgentTraceLog.agent_name)
     )
     run_counts = dict((await db.execute(run_count_stmt)).all())
@@ -422,7 +438,10 @@ async def get_agent_trace_summary(db: AsyncSession, since_days: int = 30) -> dic
             func.max(AgentTraceLog.created_at),
             func.sum(AgentTraceLog.duration_ms),
         )
-        .where(AgentTraceLog.created_at >= since)
+        .where(
+            AgentTraceLog.institution_id == institution_id,
+            AgentTraceLog.created_at >= since,
+        )
         .group_by(AgentTraceLog.agent_name, AgentTraceLog.trace_id)
         .order_by(func.max(AgentTraceLog.created_at).desc())
         .limit(20)
@@ -446,15 +465,27 @@ async def get_agent_trace_summary(db: AsyncSession, since_days: int = 30) -> dic
     }
 
 
-async def get_agent_trace_detail(db: AsyncSession, trace_id: str) -> list[dict]:
+async def get_agent_trace_detail(
+    db: AsyncSession,
+    institution_id: uuid.UUID,
+    trace_id: str,
+) -> list[dict]:
     """
-    Full ordered step list for one agent run, keyed by trace_id — this is
-    the "show me exactly what this run did" view, e.g. for demoing a
-    specific query to a reviewer or debugging a wrong answer.
+    Full ordered step list for one agent run, keyed by trace_id and strictly scoped
+    to caller's institution — this is the "show me exactly what this run did" view,
+    e.g. for demoing a specific query to a reviewer or debugging a wrong answer.
     """
+    try:
+        trace_uuid = uuid.UUID(trace_id) if isinstance(trace_id, str) else trace_id
+    except (ValueError, AttributeError):
+        return []
+
     stmt = (
         select(AgentTraceLog)
-        .where(AgentTraceLog.trace_id == trace_id)
+        .where(
+            AgentTraceLog.institution_id == institution_id,
+            AgentTraceLog.trace_id == trace_uuid,
+        )
         .order_by(AgentTraceLog.step_order)
     )
     rows = (await db.execute(stmt)).scalars().all()
@@ -471,14 +502,17 @@ async def get_agent_trace_detail(db: AsyncSession, trace_id: str) -> list[dict]:
     ]
 
 
-async def _get_gemini_quota_status(db: AsyncSession) -> dict:
+async def _get_gemini_quota_status(
+    db: AsyncSession,
+    institution_id: uuid.UUID,
+) -> dict:
     """
     Today's and this-minute's Gemini call counts vs. GEMINI_RPD_LIMIT /
     GEMINI_RPM_LIMIT (see the constants' comment above for where these
     numbers come from and why this is an estimate, not a real account-quota
-    read). "Today" is a Pacific Time calendar day (GEMINI_QUOTA_RESET_TZ),
-    matching when Google's API quotas actually reset — not UTC and not IST
-    — so this should track your AI Studio dashboard's RPD count closely.
+    read), scoped to caller's institution. "Today" is a Pacific Time calendar day
+    (GEMINI_QUOTA_RESET_TZ), matching when Google's API quotas actually reset —
+    not UTC and not IST — so this should track your AI Studio dashboard's RPD count closely.
     """
     now_utc = datetime.now(UTC)
     now_pacific = now_utc.astimezone(GEMINI_QUOTA_RESET_TZ)
@@ -487,12 +521,14 @@ async def _get_gemini_quota_status(db: AsyncSession) -> dict:
     minute_start = now_utc - timedelta(minutes=1)
 
     rpd_stmt = select(func.count(LLMUsageLog.id)).where(
+        LLMUsageLog.institution_id == institution_id,
         LLMUsageLog.provider == "gemini",
         LLMUsageLog.created_at >= today_start,
     )
     used_today = (await db.execute(rpd_stmt)).scalar() or 0
 
     rpm_stmt = select(func.count(LLMUsageLog.id)).where(
+        LLMUsageLog.institution_id == institution_id,
         LLMUsageLog.provider == "gemini",
         LLMUsageLog.created_at >= minute_start,
     )
@@ -502,21 +538,20 @@ async def _get_gemini_quota_status(db: AsyncSession) -> dict:
         "requests_used_today": used_today,
         "daily_limit": GEMINI_RPD_LIMIT,
         "requests_remaining": max(GEMINI_RPD_LIMIT - used_today, 0),
-        "percent_used": round((used_today / GEMINI_RPD_LIMIT) * 100, 1)
-        if GEMINI_RPD_LIMIT
-        else None,
+        "percent_used": round((used_today / GEMINI_RPD_LIMIT) * 100, 1) if GEMINI_RPD_LIMIT else None,
         "requests_used_this_minute": used_this_minute,
         "per_minute_limit": GEMINI_RPM_LIMIT,
         "per_minute_remaining": max(GEMINI_RPM_LIMIT - used_this_minute, 0),
     }
 
 
-async def _get_groq_quota_status(db: AsyncSession) -> dict:
+async def _get_groq_quota_status(
+    db: AsyncSession,
+    institution_id: uuid.UUID,
+) -> dict:
     """
     Today's and this-minute's Groq call/token counts vs. GROQ_RPD_LIMIT /
-    GROQ_RPM_LIMIT / GROQ_TPM_LIMIT / GROQ_TPD_LIMIT (see the constants'
-    comment above for where these numbers come from — pulled directly from
-    Groq Console's Limits table for openai/gpt-oss-120b, not guessed).
+    GROQ_RPM_LIMIT / GROQ_TPM_LIMIT / GROQ_TPD_LIMIT, scoped to caller's institution.
 
     Unlike Gemini, TPM is tracked here too since it's realistically the
     first limit you'll hit, not RPM.
@@ -528,29 +563,29 @@ async def _get_groq_quota_status(db: AsyncSession) -> dict:
     minute_start = now_utc - timedelta(minutes=1)
 
     requests_today_stmt = select(func.count(LLMUsageLog.id)).where(
+        LLMUsageLog.institution_id == institution_id,
         LLMUsageLog.provider == "groq",
         LLMUsageLog.created_at >= today_start,
     )
     requests_today = (await db.execute(requests_today_stmt)).scalar() or 0
 
     requests_this_minute_stmt = select(func.count(LLMUsageLog.id)).where(
+        LLMUsageLog.institution_id == institution_id,
         LLMUsageLog.provider == "groq",
         LLMUsageLog.created_at >= minute_start,
     )
     requests_this_minute = (await db.execute(requests_this_minute_stmt)).scalar() or 0
 
-    tokens_today_stmt = select(
-        func.sum(LLMUsageLog.input_tokens), func.sum(LLMUsageLog.output_tokens)
-    ).where(
+    tokens_today_stmt = select(func.sum(LLMUsageLog.input_tokens), func.sum(LLMUsageLog.output_tokens)).where(
+        LLMUsageLog.institution_id == institution_id,
         LLMUsageLog.provider == "groq",
         LLMUsageLog.created_at >= today_start,
     )
     in_today, out_today = (await db.execute(tokens_today_stmt)).one()
     tokens_today = int(in_today or 0) + int(out_today or 0)
 
-    tokens_this_minute_stmt = select(
-        func.sum(LLMUsageLog.input_tokens), func.sum(LLMUsageLog.output_tokens)
-    ).where(
+    tokens_this_minute_stmt = select(func.sum(LLMUsageLog.input_tokens), func.sum(LLMUsageLog.output_tokens)).where(
+        LLMUsageLog.institution_id == institution_id,
         LLMUsageLog.provider == "groq",
         LLMUsageLog.created_at >= minute_start,
     )
@@ -561,9 +596,7 @@ async def _get_groq_quota_status(db: AsyncSession) -> dict:
         "requests_used_today": requests_today,
         "daily_limit": GROQ_RPD_LIMIT,
         "requests_remaining": max(GROQ_RPD_LIMIT - requests_today, 0),
-        "percent_used": round((requests_today / GROQ_RPD_LIMIT) * 100, 1)
-        if GROQ_RPD_LIMIT
-        else None,
+        "percent_used": round((requests_today / GROQ_RPD_LIMIT) * 100, 1) if GROQ_RPD_LIMIT else None,
         "requests_used_this_minute": requests_this_minute,
         "per_minute_limit": GROQ_RPM_LIMIT,
         "per_minute_remaining": max(GROQ_RPM_LIMIT - requests_this_minute, 0),

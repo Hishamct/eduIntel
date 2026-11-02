@@ -26,6 +26,7 @@ from httpx import ASGITransport, AsyncClient
 
 from app.auth.security import create_access_token, hash_password
 from app.core.database import get_db
+from app.core.tenant import PILOT_INSTITUTION_UUID
 from app.main import app
 from app.users.dependencies import get_current_user
 from app.users.models import AdminProfile, StudentProfile, TeacherProfile, User
@@ -41,6 +42,7 @@ def create_mock_user(role: str, user_id: uuid.UUID | None = None, email: str | N
         role=role,
         is_active=True,
     )
+    user.institution_id = PILOT_INSTITUTION_UUID
     if role == "student":
         user.student_profile = StudentProfile(user_id=uid, grade="10", section="A")
     elif role == "teacher":

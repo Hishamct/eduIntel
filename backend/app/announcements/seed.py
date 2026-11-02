@@ -3,6 +3,7 @@ import uuid
 
 from app.announcements.models import Announcement
 from app.core.database import AsyncSessionLocal
+from app.core.tenant import PILOT_INSTITUTION_UUID
 
 SAMPLE_ANNOUNCEMENTS = [
     {
@@ -17,16 +18,19 @@ SAMPLE_ANNOUNCEMENTS = [
     },
     {
         "title": "New Study Material Uploaded",
-        "body": "Chapter 5 notes for Physics (Class 11) have been uploaded by your subject teacher. Check the study materials section.",
+        "body": (
+            "Chapter 5 notes for Physics (Class 11) have been uploaded by your "
+            "subject teacher. Check the study materials section."
+        ),
         "posted_by": "Priya Menon",
     },
 ]
 
 
-async def seed_announcements():
+async def seed_announcements(institution_id: uuid.UUID = PILOT_INSTITUTION_UUID):
     async with AsyncSessionLocal() as db:
         for item in SAMPLE_ANNOUNCEMENTS:
-            announcement = Announcement(id=uuid.uuid4(), **item)
+            announcement = Announcement(id=uuid.uuid4(), institution_id=institution_id, **item)
             db.add(announcement)
         await db.commit()
     print(f"Seeded {len(SAMPLE_ANNOUNCEMENTS)} announcements.")

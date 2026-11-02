@@ -50,9 +50,7 @@ def traced_node(node_name: str) -> Callable:
                 started_at = time.monotonic()
                 new_state = await fn(state)
                 duration_ms = round((time.monotonic() - started_at) * 1000)
-                prior_steps = (
-                    new_state.get("trace_steps") or state.get("trace_steps") or []
-                )
+                prior_steps = new_state.get("trace_steps") or state.get("trace_steps") or []
                 new_state["trace_steps"] = prior_steps + [
                     {
                         "node_name": node_name,

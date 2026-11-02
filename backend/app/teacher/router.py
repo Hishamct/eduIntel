@@ -7,8 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.admin.models import Timetable
-from app.core.database import get_db
-from app.core.tenant import get_trusted_tenant_id
+from app.core.tenant import TenantContext, get_tenant_db, require_tenant_role
 from app.student.models import HomeworkSubmission
 from app.student.schemas import HomeworkSubmissionRead
 from app.teacher.schemas import (
@@ -38,9 +37,10 @@ router = APIRouter(prefix="/teacher", tags=["teacher"])
 @router.get("/dashboard")
 async def teacher_dashboard(
     current_user: User = Depends(require_role("teacher")),
-    db: AsyncSession = Depends(get_db),
+    tenant: TenantContext = Depends(require_tenant_role("teacher")),
+    db: AsyncSession = Depends(get_tenant_db),
 ):
-    summary = await get_teacher_dashboard_summary(db=db)
+    summary = await get_teacher_dashboard_summary(db=db, institution_id=tenant.institution_id)
     return {
         "message": f"Welcome, {current_user.email}",
         "role": current_user.role,
@@ -55,10 +55,12 @@ async def grade_homework(
     submission_id: uuid.UUID,
     payload: GradeSubmission,
     current_user: User = Depends(require_role("teacher")),
-    db: AsyncSession = Depends(get_db),
+    tenant: TenantContext = Depends(require_tenant_role("teacher")),
+    db: AsyncSession = Depends(get_tenant_db),
 ):
     submission = await grade_homework_submission(
         db=db,
+        institution_id=tenant.institution_id,
         submission_id=submission_id,
         grader_id=current_user.id,
         score=payload.score,
@@ -73,9 +75,15 @@ async def get_all_submissions(
     status: str | None = None,
     limit: int = 100,
     current_user: User = Depends(require_role("teacher")),
-    db: AsyncSession = Depends(get_db),
+    tenant: TenantContext = Depends(require_tenant_role("teacher")),
+    db: AsyncSession = Depends(get_tenant_db),
 ):
-    submissions = await list_all_submissions(db=db, status_filter=status, limit=limit)
+    submissions = await list_all_submissions(
+        db=db,
+        institution_id=tenant.institution_id,
+        status_filter=status,
+        limit=limit,
+    )
     return submissions
 
 
@@ -83,10 +91,12 @@ async def get_all_submissions(
 async def post_assignment(
     payload: AssignmentCreate,
     current_user: User = Depends(require_role("teacher")),
-    db: AsyncSession = Depends(get_db),
+    tenant: TenantContext = Depends(require_tenant_role("teacher")),
+    db: AsyncSession = Depends(get_tenant_db),
 ):
     assignment = await create_assignment(
         db=db,
+        institution_id=tenant.institution_id,
         created_by=current_user.id,
         title=payload.title,
         subject=payload.subject,
@@ -102,9 +112,14 @@ async def post_assignment(
 async def get_assignments(
     class_section: str | None = None,
     current_user: User = Depends(require_role("teacher")),
-    db: AsyncSession = Depends(get_db),
+    tenant: TenantContext = Depends(require_tenant_role("teacher")),
+    db: AsyncSession = Depends(get_tenant_db),
 ):
-    assignments = await list_assignments(db=db, class_section=class_section)
+    assignments = await list_assignments(
+        db=db,
+        institution_id=tenant.institution_id,
+        class_section=class_section,
+    )
     return assignments
 
 
@@ -114,50 +129,60 @@ async def upload_study_material(
     title: str = Form(...),
     description: str | None = Form(None),
     file: UploadFile = File(...),
-    db: AsyncSession = Depends(get_db),
-    current_user=Depends(require_role("teacher")),
+    current_user: User = Depends(require_role("teacher")),
+    tenant: TenantContext = Depends(require_tenant_role("teacher")),
+    db: AsyncSession = Depends(get_tenant_db),
 ):
-    trusted_tenant = get_trusted_tenant_id(current_user)
     return await save_study_material(
         db=db,
+        institution_id=tenant.institution_id,
         teacher_id=current_user.id,
         subject=subject,
         title=title,
         description=description,
         file=file,
-        tenant_id=trusted_tenant,
     )
 
 
 @router.get("/study-materials", response_model=list[StudyMaterialRead])
 async def get_study_materials(
     subject: str | None = None,
-    db: AsyncSession = Depends(get_db),
-    current_user=Depends(require_role("teacher")),
+    current_user: User = Depends(require_role("teacher")),
+    tenant: TenantContext = Depends(require_tenant_role("teacher")),
+    db: AsyncSession = Depends(get_tenant_db),
 ):
-    return await list_study_materials(db=db, subject=subject)
+    return await list_study_materials(
+        db=db,
+        institution_id=tenant.institution_id,
+        subject=subject,
+    )
 
 
 @router.get("/homework/{submission_id}/file")
 async def download_homework_file(
     submission_id: uuid.UUID,
     current_user: User = Depends(require_role("teacher", "admin")),
-    db: AsyncSession = Depends(get_db),
+    tenant: TenantContext = Depends(require_tenant_role("teacher", "admin")),
+    db: AsyncSession = Depends(get_tenant_db),
 ):
     """
-    Downloads a student's homework submission file with IDOR protection:
-    - Verifies the submission exists.
-    - Resolves the student's profile and class section.
+    Downloads a student's homework submission file with IDOR and tenant protection:
+    - Verifies the submission exists within the caller's institution.
+    - Resolves the student's profile and class section within the caller's institution.
     - Restricts teachers to either:
         a) Being assigned to the student's class section on the institutional Timetable.
         b) Being the designated grader of the submission.
-    - Universal authorization for administrators.
+    - Universal authorization for administrators within the institution.
     - Validates file presence on disk.
     """
     result = await db.execute(
         select(HomeworkSubmission, StudentProfile)
         .join(StudentProfile, StudentProfile.user_id == HomeworkSubmission.student_id)
-        .where(HomeworkSubmission.id == submission_id)
+        .where(
+            HomeworkSubmission.id == submission_id,
+            HomeworkSubmission.institution_id == tenant.institution_id,
+            StudentProfile.institution_id == tenant.institution_id,
+        )
     )
     row = result.first()
 
@@ -168,11 +193,7 @@ async def download_homework_file(
         )
 
     submission, profile = row
-    student_section = (
-        f"{profile.grade}-{profile.section}"
-        if profile.grade and profile.section
-        else None
-    )
+    student_section = f"{profile.grade}-{profile.section}" if profile.grade and profile.section else None
 
     if current_user.role == "teacher":
         is_assigned_teacher = False
@@ -180,6 +201,7 @@ async def download_homework_file(
             tt_res = await db.execute(
                 select(Timetable.id)
                 .where(
+                    Timetable.institution_id == tenant.institution_id,
                     Timetable.teacher_id == current_user.id,
                     Timetable.class_section == student_section,
                 )
@@ -214,6 +236,11 @@ async def download_homework_file(
 async def get_teacher_students(
     class_section: str | None = None,
     current_user: User = Depends(require_role("teacher")),
-    db: AsyncSession = Depends(get_db),
+    tenant: TenantContext = Depends(require_tenant_role("teacher")),
+    db: AsyncSession = Depends(get_tenant_db),
 ):
-    return await list_students_for_teacher(db=db, class_section=class_section)
+    return await list_students_for_teacher(
+        db=db,
+        institution_id=tenant.institution_id,
+        class_section=class_section,
+    )

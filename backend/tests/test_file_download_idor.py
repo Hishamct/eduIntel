@@ -19,6 +19,7 @@ guards, relationship queries, and file responses without mutating active databas
 Live PostgreSQL integration testing with a disposable test database is formally
 scheduled for Phase 4.
 """
+
 import os
 import tempfile
 import uuid
@@ -29,6 +30,7 @@ from httpx import ASGITransport, AsyncClient
 
 from app.auth.security import create_access_token, hash_password
 from app.core.database import get_db
+from app.core.tenant import PILOT_INSTITUTION_UUID
 from app.main import app
 from app.student.models import HomeworkSubmission
 from app.teacher.models import StudyMaterial
@@ -36,7 +38,11 @@ from app.users.dependencies import get_current_user
 from app.users.models import AdminProfile, StudentProfile, TeacherProfile, User
 
 
-def create_mock_user(role: str, user_id: uuid.UUID | None = None) -> User:
+def create_mock_user(
+    role: str,
+    user_id: uuid.UUID | None = None,
+    institution_id: uuid.UUID | None = PILOT_INSTITUTION_UUID,
+) -> User:
     uid = user_id or uuid.uuid4()
     user = User(
         id=uid,
@@ -46,10 +52,13 @@ def create_mock_user(role: str, user_id: uuid.UUID | None = None) -> User:
         role=role,
         is_active=True,
     )
+    user.institution_id = institution_id
+
     if role == "student":
         user.student_profile = StudentProfile(
             id=uuid.uuid4(),
             user_id=uid,
+            institution_id=institution_id,
             grade="10",
             section="A",
             parent_email="parent@example.com",
@@ -58,6 +67,7 @@ def create_mock_user(role: str, user_id: uuid.UUID | None = None) -> User:
         user.teacher_profile = TeacherProfile(
             id=uuid.uuid4(),
             user_id=uid,
+            institution_id=institution_id,
             department="Science",
             subjects="Physics",
         )
@@ -65,6 +75,7 @@ def create_mock_user(role: str, user_id: uuid.UUID | None = None) -> User:
         user.admin_profile = AdminProfile(
             id=uuid.uuid4(),
             user_id=uid,
+            institution_id=institution_id,
             designation="Administrator",
         )
     return user
@@ -140,6 +151,7 @@ class TestTeacherHomeworkDownloadIDOR:
         try:
             submission = HomeworkSubmission(
                 id=uuid.uuid4(),
+                institution_id=PILOT_INSTITUTION_UUID,
                 student_id=student_user.id,
                 subject="Physics",
                 title="Homework 1",
@@ -195,6 +207,7 @@ class TestTeacherHomeworkDownloadIDOR:
         try:
             submission = HomeworkSubmission(
                 id=uuid.uuid4(),
+                institution_id=PILOT_INSTITUTION_UUID,
                 student_id=student_user.id,
                 subject="Physics",
                 title="Homework 1",
@@ -250,6 +263,7 @@ class TestTeacherHomeworkDownloadIDOR:
         try:
             submission = HomeworkSubmission(
                 id=uuid.uuid4(),
+                institution_id=PILOT_INSTITUTION_UUID,
                 student_id=student_user.id,
                 subject="Physics",
                 title="Homework 1",
@@ -305,6 +319,7 @@ class TestTeacherHomeworkDownloadIDOR:
         try:
             submission = HomeworkSubmission(
                 id=uuid.uuid4(),
+                institution_id=PILOT_INSTITUTION_UUID,
                 student_id=student_user.id,
                 subject="Physics",
                 title="Homework 1",
@@ -358,6 +373,7 @@ class TestTeacherHomeworkDownloadIDOR:
         try:
             submission = HomeworkSubmission(
                 id=uuid.uuid4(),
+                institution_id=PILOT_INSTITUTION_UUID,
                 student_id=student_user.id,
                 subject="Math",
                 title="Calculus HW",
@@ -398,6 +414,7 @@ class TestTeacherHomeworkDownloadIDOR:
 
         submission = HomeworkSubmission(
             id=uuid.uuid4(),
+            institution_id=PILOT_INSTITUTION_UUID,
             student_id=student_user.id,
             subject="Physics",
             title="Homework 1",
@@ -483,6 +500,7 @@ class TestStudentStudyMaterialDownloadIDOR:
         try:
             material = StudyMaterial(
                 id=uuid.uuid4(),
+                institution_id=PILOT_INSTITUTION_UUID,
                 teacher_id=uuid.uuid4(),
                 subject="Physics",
                 title="Advanced Quantum Mechanics",
@@ -538,6 +556,7 @@ class TestStudentStudyMaterialDownloadIDOR:
         try:
             material = StudyMaterial(
                 id=uuid.uuid4(),
+                institution_id=PILOT_INSTITUTION_UUID,
                 teacher_id=uuid.uuid4(),
                 subject="Physics",
                 title="Mechanics Notes",
@@ -590,6 +609,7 @@ class TestStudentStudyMaterialDownloadIDOR:
         try:
             material = StudyMaterial(
                 id=uuid.uuid4(),
+                institution_id=PILOT_INSTITUTION_UUID,
                 teacher_id=teacher_owner.id,  # Owner
                 subject="Biology",
                 title="Cell Biology Handout",
@@ -632,6 +652,7 @@ class TestStudentStudyMaterialDownloadIDOR:
         try:
             material = StudyMaterial(
                 id=uuid.uuid4(),
+                institution_id=PILOT_INSTITUTION_UUID,
                 teacher_id=teacher_a_id,
                 subject="Chemistry",
                 title="Organic Chemistry",
@@ -682,6 +703,7 @@ class TestStudentStudyMaterialDownloadIDOR:
         try:
             material = StudyMaterial(
                 id=uuid.uuid4(),
+                institution_id=PILOT_INSTITUTION_UUID,
                 teacher_id=uuid.uuid4(),
                 subject="History",
                 title="World History Chapter 1",
@@ -721,6 +743,7 @@ class TestStudentStudyMaterialDownloadIDOR:
 
         material = StudyMaterial(
             id=uuid.uuid4(),
+            institution_id=PILOT_INSTITUTION_UUID,
             teacher_id=uuid.uuid4(),
             subject="Physics",
             title="Lost Physics Notes",
