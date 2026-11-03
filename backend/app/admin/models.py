@@ -1,7 +1,7 @@
 import datetime
 import uuid
 
-from sqlalchemy import Date, Enum, ForeignKey, Integer, Numeric, String
+from sqlalchemy import Date, Enum, ForeignKey, Integer, Numeric, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -13,8 +13,20 @@ from app.users.models import (
 
 class Timetable(Base, TimestampMixin):
     __tablename__ = "timetable_entries"
+    __table_args__ = (
+        UniqueConstraint(
+            "institution_id",
+            "class_section",
+            "day_of_week",
+            "period",
+            name="uq_timetable_entries_institution_class_day_period",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    institution_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("institutions.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
     class_section: Mapped[str] = mapped_column(String, nullable=False, index=True)
     day_of_week: Mapped[str] = mapped_column(
         Enum(
@@ -43,6 +55,9 @@ class SalaryRecord(Base, TimestampMixin):
     __tablename__ = "salary_records"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    institution_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("institutions.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
     teacher_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id"), nullable=False, index=True
     )
@@ -63,15 +78,13 @@ class SalaryRecord(Base, TimestampMixin):
     creator: Mapped["User"] = relationship(foreign_keys=[created_by])
 
 
-import datetime  # already imported
-
-from sqlalchemy import Numeric  # add to existing sqlalchemy imports at top
-
-
 class FeeRecord(Base, TimestampMixin):
     __tablename__ = "fee_records"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    institution_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("institutions.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
     student_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id"), nullable=False, index=True
     )
@@ -94,6 +107,9 @@ class Attendance(Base, TimestampMixin):
     __tablename__ = "attendance_records"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    institution_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("institutions.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
     student_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id"), nullable=False, index=True
     )

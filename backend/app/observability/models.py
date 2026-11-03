@@ -38,12 +38,14 @@ class AuditLog(Base):
 
     __tablename__ = "audit_logs"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    institution_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("institutions.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
     )
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
-    )
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     endpoint: Mapped[str] = mapped_column(String(255), nullable=False)
     query_text: Mapped[str] = mapped_column(Text, nullable=False)
     was_blocked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
@@ -51,9 +53,7 @@ class AuditLog(Base):
     was_redacted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     redaction_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     redacted_types: Mapped[str | None] = mapped_column(Text, nullable=True)
-    was_socratic_redirected: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=False
-    )
+    was_socratic_redirected: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     socratic_trigger_pattern: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -85,13 +85,15 @@ class LLMUsageLog(Base):
 
     __tablename__ = "llm_usage_logs"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    institution_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("institutions.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
     )
     endpoint: Mapped[str] = mapped_column(String(255), nullable=False)
-    provider: Mapped[str] = mapped_column(
-        String(50), nullable=False
-    )  # "gemini" | "groq"
+    provider: Mapped[str] = mapped_column(String(50), nullable=False)  # "gemini" | "groq"
     model: Mapped[str] = mapped_column(String(100), nullable=False)
     input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -134,22 +136,20 @@ class AgentTraceLog(Base):
 
     __tablename__ = "agent_trace_logs"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    institution_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("institutions.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
     )
-    trace_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), nullable=False, index=True
-    )
-    agent_name: Mapped[str] = mapped_column(
-        String(50), nullable=False
-    )  # "admin-assistant" | "portal-assistant"
+    trace_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    agent_name: Mapped[str] = mapped_column(String(50), nullable=False)  # "admin-assistant" | "portal-assistant"
     session_id: Mapped[str] = mapped_column(String(255), nullable=False)
     node_name: Mapped[str] = mapped_column(String(100), nullable=False)
     step_order: Mapped[int] = mapped_column(Integer, nullable=False)
     duration_ms: Mapped[int] = mapped_column(Integer, nullable=False)
-    status: Mapped[str] = mapped_column(
-        String(20), nullable=False, default="ok"
-    )  # "ok" | "blocked"
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="ok")  # "ok" | "blocked"
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

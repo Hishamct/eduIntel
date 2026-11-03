@@ -1,6 +1,7 @@
 import os
-import sys
 import smtplib
+import sys
+import uuid
 from email.mime.text import MIMEText
 
 from mcp import ClientSession, StdioServerParameters
@@ -8,6 +9,7 @@ from mcp.client.stdio import stdio_client
 
 from app.core.config import settings
 from app.core.llm_client import generate_text_with_usage
+from app.core.tenant import normalize_institution_id
 from app.guardrails.pii_redaction import redact_pii, summarize_findings
 
 SERVER_PARAMS = StdioServerParameters(
@@ -52,9 +54,9 @@ async def generate_and_send_report(
     parent_email: str,
     db=None,
     generated_by_user_id=None,
+    institution_id: uuid.UUID | str | None = None,
 ) -> dict:
     student_data = None
-    email_result = None
 
     # 1. Try MCP Server for student data
     try:
@@ -62,9 +64,11 @@ async def generate_and_send_report(
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
-                data_result = await session.call_tool(
-                    "get_student_data", {"student_id": student_id}
-                )
+                tool_args = {"student_id": student_id}
+                if institution_id:
+                    tool_args["institution_id"] = str(institution_id)
+
+                data_result = await session.call_tool("get_student_data", tool_args)
                 if data_result and data_result.content:
                     student_data = data_result.content[0].text
     except Exception as mcp_err:
@@ -102,9 +106,7 @@ async def generate_and_send_report(
         llm_usage = None
 
     # 3. Guardrail: redact PII
-    redacted_body, findings = redact_pii(
-        report_body, allow_values={parent_email}
-    )
+    redacted_body, findings = redact_pii(report_body, allow_values={parent_email})
     redacted_types = summarize_findings(findings)
 
     if findings:
@@ -116,6 +118,8 @@ async def generate_and_send_report(
     if db is not None and generated_by_user_id is not None and llm_usage is not None:
         from app.observability.service import log_llm_usage, log_pii_redaction
 
+        inst_uuid = normalize_institution_id(institution_id) if institution_id is not None else None
+
         try:
             await log_pii_redaction(
                 db=db,
@@ -124,9 +128,13 @@ async def generate_and_send_report(
                 query_text=f"parent report for student_id={student_id}",
                 redaction_count=len(findings),
                 redacted_types=redacted_types,
+                institution_id=inst_uuid,
             )
             await log_llm_usage(
-                db=db, endpoint="reports/parent-report", usage=llm_usage
+                db=db,
+                endpoint="reports/parent-report",
+                usage=llm_usage,
+                institution_id=inst_uuid,
             )
         except Exception as log_err:
             print(f"[Observability Warning] Failed to log telemetry: {log_err}")
@@ -142,9 +150,7 @@ async def generate_and_send_report(
 
     if email_send_res.get("status") != "sent":
         # Raise error so the user and frontend receive the actual failure reason
-        raise RuntimeError(
-            email_send_res.get("detail", "SMTP connection failed")
-        )
+        raise RuntimeError(email_send_res.get("detail", "SMTP connection failed"))
 
     return {
         "report_body": full_email,

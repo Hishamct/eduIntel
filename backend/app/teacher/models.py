@@ -15,6 +15,9 @@ class Assignment(Base, TimestampMixin):
     __tablename__ = "assignments"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    institution_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("institutions.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
     title: Mapped[str] = mapped_column(String, nullable=False)
     subject: Mapped[str] = mapped_column(String, nullable=False)
     class_section: Mapped[str] = mapped_column(String, nullable=False, index=True)
@@ -32,6 +35,9 @@ class StudyMaterial(Base, TimestampMixin):
     __tablename__ = "study_materials"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    institution_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("institutions.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
     teacher_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id"), nullable=False, index=True
     )
@@ -55,6 +61,9 @@ class ExamResult(Base, TimestampMixin):
     __tablename__ = "exam_results"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    institution_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("institutions.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
     student_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id"), nullable=False, index=True
     )

@@ -10,6 +10,8 @@ from app.admin.models import Attendance, FeeRecord, SalaryRecord, Timetable
 from app.admin.schemas import StaffProvisionRequest
 from app.auth.security import hash_password
 from app.core.config import settings
+from app.core.tenant import PILOT_INSTITUTION_UUID
+from app.institutions.models import InstitutionMembership
 from app.student.models import HomeworkSubmission
 from app.users.models import AdminProfile, StudentProfile, TeacherProfile, User
 
@@ -20,13 +22,27 @@ class TenantAggregationBlockedError(Exception):
     pass
 
 
+def is_pilot_institution(tenant_id: str | uuid.UUID | None) -> bool:
+    if not tenant_id:
+        return False
+    val = str(tenant_id).strip().lower()
+    allowed = {
+        "00000000-0000-0000-0000-000000000001",
+        "eduintel-pilot",
+        str(settings.DEFAULT_INSTITUTION_ID).lower(),
+        str(getattr(settings, "DEFAULT_PILOT_INSTITUTION_UUID", "")).lower(),
+        str(getattr(settings, "DEFAULT_PILOT_INSTITUTION_SLUG", "")).lower(),
+    }
+    return val in allowed
+
+
 def verify_tenant_reporting_authorized(tenant_id: str | None) -> None:
     """
     Enforces strict fail-closed isolation for administrative aggregation queries.
     In Phase 2B, relational models lack an institution_id column.
     Aggregation queries across global tables are only permitted in the explicitly
     approved single-tenant pilot environment (ENABLE_LEGACY_SINGLE_TENANT_NAMESPACE=True
-    and tenant_id == DEFAULT_INSTITUTION_ID).
+    and tenant_id matches pilot identifier/DEFAULT_INSTITUTION_ID).
     In multi-tenant mode (ENABLE_LEGACY_SINGLE_TENANT_NAMESPACE=False) or for any
     non-pilot tenant, global aggregations are strictly blocked to prevent CVSS 8.5 leakage.
     """
@@ -34,7 +50,7 @@ def verify_tenant_reporting_authorized(tenant_id: str | None) -> None:
         raise ValueError("Trusted tenant_id is required for administrative reporting.")
     if (
         not settings.ENABLE_LEGACY_SINGLE_TENANT_NAMESPACE
-        or tenant_id != settings.DEFAULT_INSTITUTION_ID
+        or not is_pilot_institution(tenant_id)
     ):
         raise TenantAggregationBlockedError(
             f"Tenant-scoped aggregation is currently unavailable for institution '{tenant_id}'. "
@@ -50,8 +66,18 @@ async def create_timetable_entry(
     period: int,
     subject: str,
     teacher_id: uuid.UUID | None,
+    institution_id: uuid.UUID | None = None,
 ) -> Timetable:
+    if institution_id is None:
+        if settings.ENABLE_LEGACY_SINGLE_TENANT_NAMESPACE:
+            institution_id = PILOT_INSTITUTION_UUID
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="institution_id is required for timetable entry creation.",
+            )
     entry = Timetable(
+        institution_id=institution_id,
         class_section=class_section,
         day_of_week=day_of_week,
         period=period,
@@ -60,13 +86,19 @@ async def create_timetable_entry(
         created_by=created_by,
     )
     db.add(entry)
-    await db.commit()
+    await db.flush()
     await db.refresh(entry)
     return entry
 
 
-async def list_timetable(db: AsyncSession, class_section: str | None = None):
+async def list_timetable(
+    db: AsyncSession,
+    class_section: str | None = None,
+    institution_id: uuid.UUID | None = None,
+):
     query = select(Timetable).order_by(Timetable.day_of_week, Timetable.period)
+    if institution_id:
+        query = query.where(Timetable.institution_id == institution_id)
     if class_section:
         query = query.where(Timetable.class_section == class_section)
     result = await db.execute(query)
@@ -77,13 +109,23 @@ async def create_salary_record(
     db: AsyncSession,
     created_by: uuid.UUID,
     teacher_id: uuid.UUID,
-    month,
+    month: date,
     base_salary: float,
     bonus: float,
     deduction: float,
     payment_status: str,
+    institution_id: uuid.UUID | None = None,
 ) -> SalaryRecord:
+    if institution_id is None:
+        if settings.ENABLE_LEGACY_SINGLE_TENANT_NAMESPACE:
+            institution_id = PILOT_INSTITUTION_UUID
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="institution_id is required for salary record creation.",
+            )
     record = SalaryRecord(
+        institution_id=institution_id,
         teacher_id=teacher_id,
         month=month,
         base_salary=base_salary,
@@ -93,36 +135,60 @@ async def create_salary_record(
         created_by=created_by,
     )
     db.add(record)
-    await db.commit()
+    await db.flush()
     await db.refresh(record)
     return record
 
 
-async def list_salary_records(db: AsyncSession, teacher_id: uuid.UUID | None = None):
+async def list_salary_records(
+    db: AsyncSession,
+    teacher_id: uuid.UUID | None = None,
+    institution_id: uuid.UUID | None = None,
+):
     query = select(SalaryRecord).order_by(SalaryRecord.month.desc())
+    if institution_id:
+        query = query.where(SalaryRecord.institution_id == institution_id)
     if teacher_id:
         query = query.where(SalaryRecord.teacher_id == teacher_id)
     result = await db.execute(query)
     return result.scalars().all()
 
 
-async def list_teachers(db: AsyncSession):
-    result = await db.execute(select(User).where(User.role == "teacher"))
+async def list_teachers(
+    db: AsyncSession,
+    institution_id: uuid.UUID | None = None,
+):
+    query = (
+        select(User)
+        .join(TeacherProfile, TeacherProfile.user_id == User.id)
+        .where(User.role == "teacher")
+    )
+    if institution_id:
+        query = query.where(TeacherProfile.institution_id == institution_id)
+    result = await db.execute(query)
     return result.scalars().all()
 
 
 async def get_admin_dashboard_summary(
-    db: AsyncSession, tenant_id: str | None = None
+    db: AsyncSession, institution_id: uuid.UUID | None = None
 ) -> dict:
-    verify_tenant_reporting_authorized(tenant_id)
-    students_result = await db.execute(
-        select(func.count()).select_from(User).where(User.role == "student")
+    if institution_id is None:
+        raise ValueError("Trusted institution_id is required for dashboard summary.")
+
+    students_query = (
+        select(func.count())
+        .select_from(StudentProfile)
+        .where(StudentProfile.institution_id == institution_id)
     )
+    students_result = await db.execute(students_query)
     total_students = students_result.scalar_one()
 
-    teachers_result = await db.execute(
-        select(func.count()).select_from(User).where(User.role == "teacher")
+    teachers_query = (
+        select(func.count())
+        .select_from(TeacherProfile)
+        .where(TeacherProfile.institution_id == institution_id)
     )
+    teachers_result = await db.execute(teachers_query)
     total_teachers = teachers_result.scalar_one()
 
     return {
@@ -136,15 +202,25 @@ async def enroll_student(
     email: str,
     password: str,
     name: str,
-    grade: str | None,
-    section: str | None,
-    roll_number: str | None,
-    parent_email: str | None,
-    phone: str | None,
-    address: str | None,
-    guardian_name: str | None,
-    guardian_phone: str | None,
+    grade: str | None = None,
+    section: str | None = None,
+    roll_number: str | None = None,
+    parent_email: str | None = None,
+    phone: str | None = None,
+    address: str | None = None,
+    guardian_name: str | None = None,
+    guardian_phone: str | None = None,
+    institution_id: uuid.UUID | None = None,
 ) -> dict:
+    if institution_id is None:
+        if settings.ENABLE_LEGACY_SINGLE_TENANT_NAMESPACE:
+            institution_id = PILOT_INSTITUTION_UUID
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="institution_id is required for student enrollment.",
+            )
+
     existing = await db.execute(select(User).where(User.email == email.lower()))
     if existing.scalar_one_or_none() is not None:
         raise HTTPException(
@@ -160,10 +236,11 @@ async def enroll_student(
         is_active=True,
     )
     db.add(user)
-    await db.flush()  # assigns user.id without committing yet
+    await db.flush()  # assigns user.id without committing outer transaction
 
     profile = StudentProfile(
         id=uuid.uuid4(),
+        institution_id=institution_id,
         user_id=user.id,
         grade=grade,
         section=section,
@@ -175,7 +252,17 @@ async def enroll_student(
         guardian_phone=guardian_phone,
     )
     db.add(profile)
-    await db.commit()
+
+    membership = InstitutionMembership(
+        id=uuid.uuid4(),
+        institution_id=institution_id,
+        user_id=user.id,
+        role="student",
+        status="active",
+    )
+    db.add(membership)
+
+    await db.flush()
     await db.refresh(user)
     await db.refresh(profile)
 
@@ -196,10 +283,22 @@ async def enroll_student(
 
 
 async def create_staff_user(
-    db: AsyncSession, data: StaffProvisionRequest, role: str
+    db: AsyncSession,
+    data: StaffProvisionRequest,
+    role: str,
+    institution_id: uuid.UUID | None = None,
 ) -> User:
     if role not in ("teacher", "admin"):
         raise HTTPException(status_code=400, detail="Invalid staff role")
+
+    if institution_id is None:
+        if settings.ENABLE_LEGACY_SINGLE_TENANT_NAMESPACE:
+            institution_id = PILOT_INSTITUTION_UUID
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="institution_id is required for staff user creation.",
+            )
 
     existing = (
         await db.execute(select(User).where(User.email == data.email.lower()))
@@ -224,6 +323,7 @@ async def create_staff_user(
         db.add(
             TeacherProfile(
                 id=uuid.uuid4(),
+                institution_id=institution_id,
                 user_id=user.id,
                 department=data.department,
                 subjects=data.subjects,
@@ -233,23 +333,39 @@ async def create_staff_user(
         db.add(
             AdminProfile(
                 id=uuid.uuid4(),
+                institution_id=institution_id,
                 user_id=user.id,
                 designation=data.designation,
             )
         )
 
-    await db.commit()
+    membership = InstitutionMembership(
+        id=uuid.uuid4(),
+        institution_id=institution_id,
+        user_id=user.id,
+        role=role,
+        status="active",
+    )
+    db.add(membership)
+
+    await db.flush()
     await db.refresh(user)
     return user
 
 
-async def list_students(db: AsyncSession):
-    result = await db.execute(
+async def list_students(
+    db: AsyncSession,
+    institution_id: uuid.UUID | None = None,
+):
+    query = (
         select(User, StudentProfile)
         .join(StudentProfile, StudentProfile.user_id == User.id)
         .where(User.role == "student")
         .order_by(User.created_at.desc())
     )
+    if institution_id:
+        query = query.where(StudentProfile.institution_id == institution_id)
+    result = await db.execute(query)
     rows = result.all()
 
     return [
@@ -274,6 +390,7 @@ async def list_students(db: AsyncSession):
 async def update_student_profile(
     db: AsyncSession,
     student_id: uuid.UUID,
+    institution_id: uuid.UUID | None = None,
     grade: str | None = None,
     section: str | None = None,
     roll_number: str | None = None,
@@ -283,11 +400,14 @@ async def update_student_profile(
     guardian_name: str | None = None,
     guardian_phone: str | None = None,
 ) -> dict:
-    result = await db.execute(
+    query = (
         select(User, StudentProfile)
         .join(StudentProfile, StudentProfile.user_id == User.id)
         .where(User.id == student_id)
     )
+    if institution_id:
+        query = query.where(StudentProfile.institution_id == institution_id)
+    result = await db.execute(query)
     row = result.first()
     if not row:
         raise HTTPException(status_code=404, detail="Student not found")
@@ -311,7 +431,7 @@ async def update_student_profile(
     if guardian_phone is not None:
         profile.guardian_phone = guardian_phone
 
-    await db.commit()
+    await db.flush()
     await db.refresh(profile)
 
     return {
@@ -328,7 +448,6 @@ async def update_student_profile(
         "guardian_phone": profile.guardian_phone,
         "created_at": user.created_at,
     }
-
 
 
 async def get_revenue_summary(
@@ -404,12 +523,12 @@ async def get_student_teacher_counts(
 ) -> dict:
     verify_tenant_reporting_authorized(tenant_id)
     students_result = await db.execute(
-        select(func.count()).select_from(User).where(User.role == "student")
+        select(func.count()).select_from(StudentProfile)
     )
     total_students = students_result.scalar_one()
 
     teachers_result = await db.execute(
-        select(func.count()).select_from(User).where(User.role == "teacher")
+        select(func.count()).select_from(TeacherProfile)
     )
     total_teachers = teachers_result.scalar_one()
 

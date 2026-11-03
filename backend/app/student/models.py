@@ -14,6 +14,9 @@ class HomeworkSubmission(Base, TimestampMixin):
     __tablename__ = "homework_submissions"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    institution_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("institutions.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
     student_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id"), nullable=False, index=True
     )
@@ -43,6 +46,9 @@ class DoubtThread(Base, TimestampMixin):
     __tablename__ = "doubt_threads"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    institution_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("institutions.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
     student_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id"), nullable=False, index=True
     )
@@ -66,6 +72,9 @@ class DoubtMessage(Base, TimestampMixin):
     __tablename__ = "doubt_messages"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    institution_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("institutions.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
     thread_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("doubt_threads.id"), nullable=False, index=True
     )

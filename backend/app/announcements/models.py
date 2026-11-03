@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import Column, String, Text
+from sqlalchemy import Column, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 
 from app.core.database import Base
@@ -13,8 +13,12 @@ class Announcement(Base, TimestampMixin):
     __tablename__ = "announcements"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    institution_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("institutions.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
     title = Column(String(255), nullable=False)
     body = Column(Text, nullable=False)
-    posted_by = Column(
-        String(255), nullable=False
-    )  # simple for demo; could be FK to users.id
+    posted_by = Column(String(255), nullable=False)  # simple for demo; could be FK to users.id

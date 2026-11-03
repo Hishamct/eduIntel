@@ -18,6 +18,7 @@ UPLOAD_DIR = "uploads/homework"
 
 async def save_homework_submission(
     db: AsyncSession,
+    institution_id: uuid.UUID,
     student_id: uuid.UUID,
     subject: str,
     title: str,
@@ -26,8 +27,10 @@ async def save_homework_submission(
 ) -> HomeworkSubmission:
     os.makedirs(UPLOAD_DIR, exist_ok=True)
 
+    raw_filename = file.filename or "upload"
+    sanitized_filename = os.path.basename(raw_filename.replace("\\", "/")).strip() or "upload"
     file_id = uuid.uuid4()
-    safe_filename = f"{file_id}_{file.filename}"
+    safe_filename = f"{file_id}_{sanitized_filename}"
     file_path = os.path.join(UPLOAD_DIR, safe_filename)
 
     contents = await file.read()
@@ -46,18 +49,20 @@ async def save_homework_submission(
             logger.warning(f"OCR failed for homework upload: {e.detail}")
 
     submission = HomeworkSubmission(
+        institution_id=institution_id,
         student_id=student_id,
         subject=subject,
         title=title,
         description=description,
         file_path=file_path,
-        original_filename=file.filename,
+        original_filename=sanitized_filename,
         extracted_text=extracted_text,
         ocr_confidence=ocr_confidence,
+        status="submitted",
     )
 
     db.add(submission)
-    await db.commit()
+    await db.flush()
     await db.refresh(submission)
 
     return submission
@@ -65,12 +70,14 @@ async def save_homework_submission(
 
 async def create_doubt_thread(
     db: AsyncSession,
+    institution_id: uuid.UUID,
     student_id: uuid.UUID,
     subject: str,
     title: str,
     body: str,
 ) -> DoubtThread:
     thread = DoubtThread(
+        institution_id=institution_id,
         student_id=student_id,
         subject=subject,
         title=title,
@@ -79,6 +86,7 @@ async def create_doubt_thread(
     await db.flush()  # assigns thread.id without committing yet
 
     first_message = DoubtMessage(
+        institution_id=institution_id,
         thread_id=thread.id,
         sender_id=student_id,
         sender_role="student",
@@ -86,58 +94,90 @@ async def create_doubt_thread(
     )
     db.add(first_message)
 
-    await db.commit()
+    await db.flush()
 
     # Re-fetch with messages eagerly loaded, so the response has the full thread
     result = await db.execute(
         select(DoubtThread)
         .options(selectinload(DoubtThread.messages))
-        .where(DoubtThread.id == thread.id)
+        .where(
+            DoubtThread.id == thread.id,
+            DoubtThread.institution_id == institution_id,
+            DoubtThread.student_id == student_id,
+        )
     )
     return result.scalar_one()
 
 
 async def add_doubt_message(
     db: AsyncSession,
+    institution_id: uuid.UUID,
     thread_id: uuid.UUID,
     sender_id: uuid.UUID,
     sender_role: str,
     body: str,
 ) -> DoubtThread:
+    # Verify target thread exists, belongs to caller's institution, and belongs to caller (IDOR guard)
+    thread_res = await db.execute(
+        select(DoubtThread).where(
+            DoubtThread.id == thread_id,
+            DoubtThread.institution_id == institution_id,
+            DoubtThread.student_id == sender_id,
+        )
+    )
+    thread = thread_res.scalar_one_or_none()
+    if thread is None:
+        raise HTTPException(status_code=404, detail="Doubt thread not found")
+
     message = DoubtMessage(
+        institution_id=institution_id,
         thread_id=thread_id,
         sender_id=sender_id,
         sender_role=sender_role,
         body=body,
     )
     db.add(message)
-    await db.commit()
+    await db.flush()
 
     result = await db.execute(
         select(DoubtThread)
         .options(selectinload(DoubtThread.messages))
-        .where(DoubtThread.id == thread_id)
+        .where(
+            DoubtThread.id == thread_id,
+            DoubtThread.institution_id == institution_id,
+            DoubtThread.student_id == sender_id,
+        )
     )
     return result.scalar_one()
 
 
 async def list_doubt_threads(
-    db: AsyncSession, student_id: uuid.UUID
+    db: AsyncSession,
+    institution_id: uuid.UUID,
+    student_id: uuid.UUID,
 ) -> list[DoubtThread]:
     result = await db.execute(
         select(DoubtThread)
         .options(selectinload(DoubtThread.messages))
-        .where(DoubtThread.student_id == student_id)
+        .where(
+            DoubtThread.institution_id == institution_id,
+            DoubtThread.student_id == student_id,
+        )
         .order_by(DoubtThread.created_at.desc())
     )
     return result.scalars().all()
 
 
-async def get_dashboard_summary(db: AsyncSession, student_id: uuid.UUID) -> dict:
+async def get_dashboard_summary(
+    db: AsyncSession,
+    institution_id: uuid.UUID,
+    student_id: uuid.UUID,
+) -> dict:
     homework_count_result = await db.execute(
         select(func.count())
         .select_from(HomeworkSubmission)
         .where(
+            HomeworkSubmission.institution_id == institution_id,
             HomeworkSubmission.student_id == student_id,
             HomeworkSubmission.status == "submitted",
         )
@@ -147,19 +187,29 @@ async def get_dashboard_summary(db: AsyncSession, student_id: uuid.UUID) -> dict
     doubts_count_result = await db.execute(
         select(func.count())
         .select_from(DoubtThread)
-        .where(DoubtThread.student_id == student_id, DoubtThread.status == "open")
+        .where(
+            DoubtThread.institution_id == institution_id,
+            DoubtThread.student_id == student_id,
+            DoubtThread.status == "open",
+        )
     )
     unresolved_doubts = doubts_count_result.scalar_one()
 
     recent_homework = await db.execute(
         select(HomeworkSubmission)
-        .where(HomeworkSubmission.student_id == student_id)
+        .where(
+            HomeworkSubmission.institution_id == institution_id,
+            HomeworkSubmission.student_id == student_id,
+        )
         .order_by(HomeworkSubmission.created_at.desc())
         .limit(3)
     )
     recent_doubts = await db.execute(
         select(DoubtThread)
-        .where(DoubtThread.student_id == student_id)
+        .where(
+            DoubtThread.institution_id == institution_id,
+            DoubtThread.student_id == student_id,
+        )
         .order_by(DoubtThread.created_at.desc())
         .limit(3)
     )
@@ -193,9 +243,15 @@ async def get_dashboard_summary(db: AsyncSession, student_id: uuid.UUID) -> dict
 
 
 async def list_study_materials_for_student(
-    db: AsyncSession, subject: str | None = None
-):
-    query = select(StudyMaterial).order_by(StudyMaterial.created_at.desc())
+    db: AsyncSession,
+    institution_id: uuid.UUID,
+    subject: str | None = None,
+) -> list[StudyMaterial]:
+    query = (
+        select(StudyMaterial)
+        .where(StudyMaterial.institution_id == institution_id)
+        .order_by(StudyMaterial.created_at.desc())
+    )
     if subject:
         query = query.where(StudyMaterial.subject == subject)
     result = await db.execute(query)

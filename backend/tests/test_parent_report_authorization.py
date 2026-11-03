@@ -21,6 +21,7 @@ schema validation, and HTTP status codes without mutating active development rec
 Live PostgreSQL integration testing with a disposable test database is formally
 scheduled for Phase 4 (Dedicated Testing Phase).
 """
+
 import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -29,12 +30,18 @@ from httpx import ASGITransport, AsyncClient
 
 from app.auth.security import create_access_token, hash_password
 from app.core.database import get_db
+from app.core.tenant import PILOT_INSTITUTION_UUID
 from app.main import app
 from app.users.dependencies import get_current_user
 from app.users.models import AdminProfile, StudentProfile, TeacherProfile, User
 
 
-def create_mock_user(role: str, user_id: uuid.UUID | None = None, email: str | None = None) -> User:
+def create_mock_user(
+    role: str,
+    user_id: uuid.UUID | None = None,
+    email: str | None = None,
+    institution_id: uuid.UUID | None = PILOT_INSTITUTION_UUID,
+) -> User:
     uid = user_id or uuid.uuid4()
     user = User(
         id=uid,
@@ -44,9 +51,11 @@ def create_mock_user(role: str, user_id: uuid.UUID | None = None, email: str | N
         role=role,
         is_active=True,
     )
+    user.institution_id = institution_id
     if role == "student":
         user.student_profile = StudentProfile(
             id=uuid.uuid4(),
+            institution_id=institution_id or PILOT_INSTITUTION_UUID,
             user_id=uid,
             grade="10",
             section="A",
@@ -55,6 +64,7 @@ def create_mock_user(role: str, user_id: uuid.UUID | None = None, email: str | N
     elif role == "teacher":
         user.teacher_profile = TeacherProfile(
             id=uuid.uuid4(),
+            institution_id=institution_id or PILOT_INSTITUTION_UUID,
             user_id=uid,
             department="Science",
             subjects="Physics",
@@ -62,6 +72,7 @@ def create_mock_user(role: str, user_id: uuid.UUID | None = None, email: str | N
     elif role == "admin":
         user.admin_profile = AdminProfile(
             id=uuid.uuid4(),
+            institution_id=institution_id or PILOT_INSTITUTION_UUID,
             user_id=uid,
             designation="Administrator",
         )
@@ -361,6 +372,7 @@ class TestMultiFactorTeacherAuthorization:
                         parent_email=student_profile.parent_email,
                         db=mock_db,
                         generated_by_user_id=teacher_user.id,
+                        institution_id=teacher_user.institution_id,
                     )
         finally:
             app.dependency_overrides.clear()
@@ -470,6 +482,7 @@ class TestAdminAuthorizationAndDeliveryIntegrity:
                         parent_email=student_profile.parent_email,
                         db=mock_db,
                         generated_by_user_id=admin_user.id,
+                        institution_id=admin_user.institution_id,
                     )
         finally:
             app.dependency_overrides.clear()
@@ -614,3 +627,112 @@ class TestAdminAuthorizationAndDeliveryIntegrity:
                 assert resp.status_code != 502
         finally:
             app.dependency_overrides.clear()
+
+
+class TestParentReportTenantIsolation:
+    """Verifies tenant isolation and telemetry attribution for parent reports."""
+
+    TENANT_ALPHA = uuid.UUID("11111111-1111-1111-1111-111111111111")
+    TENANT_BETA = uuid.UUID("22222222-2222-2222-2222-222222222222")
+
+    @pytest.mark.asyncio
+    async def test_cross_tenant_student_report_rejected_with_404(self):
+        """
+        A teacher in Tenant Alpha attempting to trigger a parent report for a student
+        enrolled in Tenant Beta must be rejected with HTTP 404 Not Found, preventing cross-tenant IDOR.
+        """
+        teacher_alpha = create_mock_user("teacher", institution_id=self.TENANT_ALPHA)
+        student_beta = create_mock_user("student", institution_id=self.TENANT_BETA)
+
+        # Mock DB session simulating institution_id filter:
+        # returns student ONLY when queried with matching institution_id
+        mock_db = AsyncMock()
+
+        async def mock_execute(query):
+            query_str = str(query).lower()
+            res = MagicMock()
+            if "student_profiles" in query_str and "users" in query_str:
+                # Scoped query checks StudentProfile.institution_id == tenant.institution_id
+                # Since teacher is Alpha and student is Beta, return None
+                res.first.return_value = None
+            else:
+                res.scalar_one_or_none.return_value = None
+            return res
+
+        mock_db.execute = AsyncMock(side_effect=mock_execute)
+
+        app.dependency_overrides[get_current_user] = lambda: teacher_alpha
+        app.dependency_overrides[get_db] = lambda: mock_db
+
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                headers = make_auth_header(teacher_alpha)
+                resp = await client.post(
+                    f"/reports/parent-report/{student_beta.id}",
+                    headers=headers,
+                )
+                assert resp.status_code == 404
+                assert "Student not found" in resp.json()["detail"]
+        finally:
+            app.dependency_overrides.clear()
+
+    @pytest.mark.asyncio
+    async def test_untenanted_teacher_rejected_with_403(self):
+        """
+        A user with teacher role but without institution membership must be rejected with 403 Forbidden.
+        """
+        untenanted_teacher = create_mock_user("teacher", institution_id=None)
+        mock_db = AsyncMock()
+
+        app.dependency_overrides[get_current_user] = lambda: untenanted_teacher
+        app.dependency_overrides[get_db] = lambda: mock_db
+
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                headers = make_auth_header(untenanted_teacher)
+                resp = await client.post(
+                    f"/reports/parent-report/{uuid.uuid4()}",
+                    headers=headers,
+                )
+                assert resp.status_code == 403
+                assert "Tenant context required" in resp.json()["detail"]
+        finally:
+            app.dependency_overrides.clear()
+
+    @pytest.mark.asyncio
+    async def test_generate_and_send_report_passes_tenant_id_to_telemetry(self):
+        """
+        Verifies that generate_and_send_report forwards the institution_id to
+        log_pii_redaction and log_llm_usage.
+        """
+        from app.reports.parent_report_agent import generate_and_send_report
+
+        mock_db = AsyncMock()
+        student_id = str(uuid.uuid4())
+        user_id = uuid.uuid4()
+
+        with (
+            patch("app.reports.parent_report_agent.generate_text_with_usage") as mock_llm,
+            patch("app.reports.parent_report_agent.send_email_direct", return_value={"status": "sent"}),
+            patch("app.observability.service.log_pii_redaction", new_callable=AsyncMock) as mock_pii,
+            patch("app.observability.service.log_llm_usage", new_callable=AsyncMock) as mock_usage,
+        ):
+            mock_usage_obj = MagicMock()
+            mock_llm.return_value = ("Student report body", mock_usage_obj)
+
+            res = await generate_and_send_report(
+                student_id=student_id,
+                student_name="Alice",
+                parent_email="parent@example.com",
+                db=mock_db,
+                generated_by_user_id=user_id,
+                institution_id=self.TENANT_ALPHA,
+            )
+
+            assert "report_body" in res
+            mock_pii.assert_called_once()
+            mock_usage.assert_called_once()
+            assert mock_pii.call_args[1]["institution_id"] == self.TENANT_ALPHA
+            assert mock_usage.call_args[1]["institution_id"] == self.TENANT_ALPHA

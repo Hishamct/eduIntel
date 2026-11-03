@@ -95,19 +95,13 @@ class TestRagAuthenticationAndRoleGuards:
 
     @pytest.mark.asyncio
     async def test_rag_query_anonymous_rejected_401(self):
-        async with AsyncClient(
-            transport=ASGITransport(app=app), base_url="http://test"
-        ) as client:
-            resp = await client.post(
-                "/rag/query", json={"query": "test query", "collection": "portal_help_docs"}
-            )
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.post("/rag/query", json={"query": "test query", "collection": "portal_help_docs"})
             assert resp.status_code == 401
 
     @pytest.mark.asyncio
     async def test_debug_query_anonymous_rejected_401(self):
-        async with AsyncClient(
-            transport=ASGITransport(app=app), base_url="http://test"
-        ) as client:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             resp = await client.get("/rag/debug-query?q=test")
             assert resp.status_code == 401
 
@@ -116,12 +110,8 @@ class TestRagAuthenticationAndRoleGuards:
         student = create_mock_user("student", institution_id="inst-pilot")
         app.dependency_overrides[get_current_user] = lambda: student
         try:
-            async with AsyncClient(
-                transport=ASGITransport(app=app), base_url="http://test"
-            ) as client:
-                resp = await client.get(
-                    "/rag/debug-query?q=mechanics", headers=make_auth_header(student)
-                )
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+                resp = await client.get("/rag/debug-query?q=mechanics", headers=make_auth_header(student))
                 assert resp.status_code == 403
                 assert "requires one of these roles: admin" in resp.json()["detail"]
         finally:
@@ -132,12 +122,8 @@ class TestRagAuthenticationAndRoleGuards:
         teacher = create_mock_user("teacher", institution_id="inst-pilot")
         app.dependency_overrides[get_current_user] = lambda: teacher
         try:
-            async with AsyncClient(
-                transport=ASGITransport(app=app), base_url="http://test"
-            ) as client:
-                resp = await client.get(
-                    "/rag/debug-query?q=mechanics", headers=make_auth_header(teacher)
-                )
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+                resp = await client.get("/rag/debug-query?q=mechanics", headers=make_auth_header(teacher))
                 assert resp.status_code == 403
                 assert "requires one of these roles: admin" in resp.json()["detail"]
         finally:
@@ -156,12 +142,8 @@ class TestRagAuthenticationAndRoleGuards:
                 }
             ]
             try:
-                async with AsyncClient(
-                    transport=ASGITransport(app=app), base_url="http://test"
-                ) as client:
-                    resp = await client.get(
-                        "/rag/debug-query?q=physics", headers=make_auth_header(admin)
-                    )
+                async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+                    resp = await client.get("/rag/debug-query?q=physics", headers=make_auth_header(admin))
                     assert resp.status_code == 200
                     data = resp.json()
                     assert len(data) == 1
@@ -178,9 +160,7 @@ class TestClientTenantInjectionRejection:
         student = create_mock_user("student", institution_id="inst-pilot")
         app.dependency_overrides[get_current_user] = lambda: student
         try:
-            async with AsyncClient(
-                transport=ASGITransport(app=app), base_url="http://test"
-            ) as client:
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
                 # Client attempts to pass institution_id to bypass tenant boundary
                 resp = await client.post(
                     "/rag/query",
@@ -210,9 +190,7 @@ class TestFailClosedTenantEnforcement:
         app.dependency_overrides[get_db] = lambda: mock_db
         with patch.object(settings, "ENABLE_LEGACY_SINGLE_TENANT_NAMESPACE", False):
             try:
-                async with AsyncClient(
-                    transport=ASGITransport(app=app), base_url="http://test"
-                ) as client:
+                async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
                     resp = await client.post(
                         "/rag/query",
                         json={"query": "test query", "collection": "study_materials"},
@@ -230,9 +208,7 @@ class TestFailClosedTenantEnforcement:
         app.dependency_overrides[get_current_user] = lambda: admin_no_tenant
         with patch.object(settings, "ENABLE_LEGACY_SINGLE_TENANT_NAMESPACE", False):
             try:
-                async with AsyncClient(
-                    transport=ASGITransport(app=app), base_url="http://test"
-                ) as client:
+                async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
                     resp = await client.get(
                         "/rag/debug-query?q=optics&collection=study_materials",
                         headers=make_auth_header(admin_no_tenant),
@@ -277,9 +253,7 @@ class TestGlobalPortalHelpDocsExemption:
             }
             with patch.object(settings, "ENABLE_LEGACY_SINGLE_TENANT_NAMESPACE", False):
                 try:
-                    async with AsyncClient(
-                        transport=ASGITransport(app=app), base_url="http://test"
-                    ) as client:
+                    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
                         resp = await client.post(
                             "/rag/query",
                             json={"query": "how to submit homework?", "collection": "portal_help_docs"},
@@ -299,8 +273,10 @@ class TestGlobalPortalHelpDocsExemption:
             "metadatas": [[{"title": "FAQ", "subject": "General"}]],
         }
 
-        with patch("app.rag.client.get_collection_by_name", return_value=mock_collection), \
-             patch("app.rag.service.generate_text_with_usage", return_value=("Help answer", None)):
+        with (
+            patch("app.rag.client.get_collection_by_name", return_value=mock_collection),
+            patch("app.rag.service.generate_text_with_usage", return_value=("Help answer", None)),
+        ):
             result = retrieve_and_generate(
                 query="How do I upload?",
                 collection_name="portal_help_docs",
@@ -324,8 +300,10 @@ class TestCrossTenantVectorIsolation:
             "metadatas": [[{"title": "Chem Notes", "subject": "Chemistry", "institution_id": "inst-alpha"}]],
         }
 
-        with patch("app.rag.client.get_collection_by_name", return_value=mock_collection), \
-             patch("app.rag.service.generate_text_with_usage", return_value=("Synthesized answer", None)):
+        with (
+            patch("app.rag.client.get_collection_by_name", return_value=mock_collection),
+            patch("app.rag.service.generate_text_with_usage", return_value=("Synthesized answer", None)),
+        ):
             result = retrieve_and_generate(
                 query="Explain covalent bonds",
                 collection_name="study_materials",
@@ -361,8 +339,10 @@ class TestCrossTenantVectorIsolation:
         mock_collection = MagicMock()
         mock_collection.query.side_effect = fake_query
 
-        with patch("app.rag.client.get_collection_by_name", return_value=mock_collection), \
-             patch("app.rag.service.generate_text_with_usage", return_value=("Answer", None)):
+        with (
+            patch("app.rag.client.get_collection_by_name", return_value=mock_collection),
+            patch("app.rag.service.generate_text_with_usage", return_value=("Answer", None)),
+        ):
             # User from Tenant Alpha queries
             res_alpha = retrieve_and_generate(
                 query="physics curriculum",
@@ -456,14 +436,18 @@ class TestTrustedTenantResolver:
 
     def test_user_with_explicit_institution_id_takes_precedence(self):
         user = create_mock_user("teacher", institution_id="inst-custom")
-        with patch.object(settings, "ENABLE_LEGACY_SINGLE_TENANT_NAMESPACE", True), \
-             patch.object(settings, "DEFAULT_INSTITUTION_ID", "eduintel-pilot"):
+        with (
+            patch.object(settings, "ENABLE_LEGACY_SINGLE_TENANT_NAMESPACE", True),
+            patch.object(settings, "DEFAULT_INSTITUTION_ID", "eduintel-pilot"),
+        ):
             assert get_trusted_tenant_id(user) == "inst-custom"
 
     def test_legacy_mode_enabled_falls_back_to_pilot_setting(self):
         user = create_mock_user("teacher", institution_id=None)
-        with patch.object(settings, "ENABLE_LEGACY_SINGLE_TENANT_NAMESPACE", True), \
-             patch.object(settings, "DEFAULT_INSTITUTION_ID", "eduintel-pilot"):
+        with (
+            patch.object(settings, "ENABLE_LEGACY_SINGLE_TENANT_NAMESPACE", True),
+            patch.object(settings, "DEFAULT_INSTITUTION_ID", "eduintel-pilot"),
+        ):
             assert get_trusted_tenant_id(user) == "eduintel-pilot"
 
     def test_legacy_mode_disabled_fails_closed_when_user_lacks_institution_id(self):
@@ -471,3 +455,93 @@ class TestTrustedTenantResolver:
         with patch.object(settings, "ENABLE_LEGACY_SINGLE_TENANT_NAMESPACE", False):
             assert get_trusted_tenant_id(user) is None
             assert get_trusted_tenant_id(None) is None
+
+
+class TestRagCollectionsTenantAuthorization:
+    """Verifies authentication and tenant guards on GET /rag/collections."""
+
+    @pytest.mark.asyncio
+    async def test_collections_anonymous_rejected_401(self):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.get("/rag/collections")
+            assert resp.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_collections_student_role_accepted_200(self):
+        student = create_mock_user("student", institution_id="inst-pilot")
+        app.dependency_overrides[get_current_user] = lambda: student
+        try:
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+                resp = await client.get("/rag/collections", headers=make_auth_header(student))
+                assert resp.status_code == 200
+                data = resp.json()
+                assert len(data) == 2
+                assert any(c["name"] == "portal_help_docs" for c in data)
+                assert any(c["name"] == "study_materials" for c in data)
+        finally:
+            app.dependency_overrides.pop(get_current_user, None)
+
+    @pytest.mark.asyncio
+    async def test_collections_teacher_role_accepted_200(self):
+        teacher = create_mock_user("teacher", institution_id="inst-pilot")
+        app.dependency_overrides[get_current_user] = lambda: teacher
+        try:
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+                resp = await client.get("/rag/collections", headers=make_auth_header(teacher))
+                assert resp.status_code == 200
+        finally:
+            app.dependency_overrides.pop(get_current_user, None)
+
+    @pytest.mark.asyncio
+    async def test_collections_admin_role_accepted_200(self):
+        admin = create_mock_user("admin", institution_id="inst-pilot")
+        app.dependency_overrides[get_current_user] = lambda: admin
+        try:
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+                resp = await client.get("/rag/collections", headers=make_auth_header(admin))
+                assert resp.status_code == 200
+        finally:
+            app.dependency_overrides.pop(get_current_user, None)
+
+
+class TestRagTelemetryTenantAttribution:
+    """Verifies that RAG query endpoints pass institution_id to observability telemetry."""
+
+    @pytest.mark.asyncio
+    async def test_rag_query_telemetry_attributed_to_tenant_institution_id(self):
+        inst_id = str(uuid.uuid4())
+        inst_uuid = uuid.UUID(inst_id)
+        student = create_mock_user("student", institution_id=inst_id)
+        mock_db = AsyncMock()
+
+        app.dependency_overrides[get_current_user] = lambda: student
+        app.dependency_overrides[get_db] = lambda: mock_db
+
+        with (
+            patch("app.rag.router.retrieve_and_generate") as mock_rag,
+            patch("app.rag.router.log_socratic_redirect", new_callable=AsyncMock) as mock_socratic,
+            patch("app.rag.router.log_llm_usage", new_callable=AsyncMock) as mock_usage,
+        ):
+            mock_rag.return_value = {
+                "answer": "Study material response",
+                "sources": [],
+                "socratic_mode": False,
+                "cheating_pattern": None,
+                "llm_usage": MagicMock(),
+            }
+
+            try:
+                async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+                    resp = await client.post(
+                        "/rag/query",
+                        json={"query": "Explain kinematics", "collection": "study_materials"},
+                        headers=make_auth_header(student),
+                    )
+                    assert resp.status_code == 200
+                    mock_socratic.assert_called_once()
+                    mock_usage.assert_called_once()
+                    assert mock_socratic.call_args[1]["institution_id"] == inst_uuid
+                    assert mock_usage.call_args[1]["institution_id"] == inst_uuid
+            finally:
+                app.dependency_overrides.pop(get_current_user, None)
+                app.dependency_overrides.pop(get_db, None)

@@ -1,4 +1,5 @@
 from app.core.llm_client import generate_text_with_usage
+from app.core.tenant import PILOT_INSTITUTION_UUID, is_pilot_institution
 from app.guardrails.anti_cheating import (
     build_socratic_instruction,
     check_for_cheating_intent,
@@ -13,9 +14,27 @@ CHUNK_SIZE = 800
 CHUNK_OVERLAP = 100
 
 
-def chunk_text(
-    text: str, chunk_size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP
-) -> list[str]:
+def build_chroma_tenant_filter(institution_id: str | None) -> dict:
+    """
+    Constructs ChromaDB metadata filter supporting canonical UUIDs and legacy
+    pilot slug compatibility for transition safety.
+    """
+    if not institution_id:
+        raise ValueError("Trusted institution_id is required for tenant vector filtering")
+
+    if is_pilot_institution(institution_id):
+        return {
+            "institution_id": {
+                "$in": [
+                    str(PILOT_INSTITUTION_UUID),
+                    "eduintel-pilot",
+                ]
+            }
+        }
+    return {"institution_id": str(institution_id)}
+
+
+def chunk_text(text: str, chunk_size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP) -> list[str]:
     """
     Splits text into overlapping chunks so retrieval can return
     precise, relevant sections rather than whole documents.
@@ -59,6 +78,8 @@ def ingest_study_material(
 
     collection = get_study_materials_collection()
 
+    canonical_inst_id = str(PILOT_INSTITUTION_UUID) if is_pilot_institution(institution_id) else str(institution_id)
+
     ids = [f"{material_id}_chunk_{i}" for i in range(len(chunks))]
     metadatas = [
         {
@@ -66,7 +87,7 @@ def ingest_study_material(
             "subject": subject,
             "title": title,
             "chunk_index": i,
-            "institution_id": str(institution_id),
+            "institution_id": canonical_inst_id,
         }
         for i in range(len(chunks))
     ]
@@ -92,12 +113,10 @@ def debug_query_study_materials(
     collection = get_collection_by_name(collection_name)
 
     if collection_name == "study_materials":
-        if not institution_id:
-            raise ValueError("Trusted institution_id is required for study_materials retrieval")
         results = collection.query(
             query_texts=[query],
             n_results=n_results,
-            where={"institution_id": str(institution_id)},
+            where=build_chroma_tenant_filter(institution_id),
         )
     else:
         results = collection.query(query_texts=[query], n_results=n_results)
@@ -143,7 +162,7 @@ def retrieve_and_generate(
 
     Tenant isolation rule:
     - For 'study_materials', institution_id is MANDATORY. If missing, fails closed
-      by raising ValueError. ChromaDB query applies where={"institution_id": str(institution_id)}.
+      by raising ValueError. ChromaDB query applies dual-identifier or tenant where filter.
     - For 'portal_help_docs', collection is global system help and does not require tenant filtering.
     """
     # Guardrail: check for prompt-injection attempts BEFORE this text is
@@ -163,12 +182,10 @@ def retrieve_and_generate(
     collection = get_collection_by_name(collection_name)
 
     if collection_name == "study_materials":
-        if not institution_id:
-            raise ValueError("Trusted institution_id is required for study_materials retrieval")
         results = collection.query(
             query_texts=[query],
             n_results=n_results,
-            where={"institution_id": str(institution_id)},
+            where=build_chroma_tenant_filter(institution_id),
         )
     else:
         results = collection.query(query_texts=[query], n_results=n_results)

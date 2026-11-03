@@ -14,14 +14,13 @@ Comprehensive security regression test suite for SEC-09:
 
 import time
 import uuid
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 
 from app.admin.service import (
     TenantAggregationBlockedError,
-    get_admin_dashboard_summary,
     get_attendance_stats,
     get_revenue_summary,
     get_salary_summary,
@@ -43,6 +42,8 @@ from app.agents.admin_assistant import (
 from app.auth.security import create_access_token, hash_password
 from app.core.config import settings
 from app.core.database import get_db
+from app.core.tenant import PILOT_INSTITUTION_UUID
+from app.institutions.models import Institution, InstitutionMembership
 from app.main import app
 from app.users.dependencies import get_current_user
 from app.users.models import User
@@ -71,6 +72,7 @@ def create_mock_user(
 # 1. Zero SQL Execution & Fail-Closed Guard Tests
 # =====================================================================
 
+
 class TestReportingFunctionsFailClosed:
     """Verifies that all reporting functions fail closed before executing any SQL queries."""
 
@@ -84,7 +86,6 @@ class TestReportingFunctionsFailClosed:
             (get_salary_summary, {"month": None}),
             (get_timetable_coverage, {"class_section": "10-A"}),
             (get_teacher_grading_performance, {}),
-            (get_admin_dashboard_summary, {}),
         ],
     )
     async def test_all_reporting_functions_raise_tenant_blocked_in_multi_tenant_mode(self, func, kwargs):
@@ -108,7 +109,6 @@ class TestReportingFunctionsFailClosed:
             (get_salary_summary, {"month": None}),
             (get_timetable_coverage, {"class_section": "10-A"}),
             (get_teacher_grading_performance, {}),
-            (get_admin_dashboard_summary, {}),
         ],
     )
     async def test_reporting_functions_raise_value_error_when_tenant_id_is_none(self, func, kwargs):
@@ -140,6 +140,7 @@ class TestReportingFunctionsFailClosed:
 # =====================================================================
 # 2. LangGraph Admin Assistant Tool Execution Security
 # =====================================================================
+
 
 class TestAdminAssistantLangGraphExecution:
     """Verifies that the LangGraph tool execution node enforces tenant boundaries and safe responses."""
@@ -204,10 +205,27 @@ class TestAdminAssistantLangGraphExecution:
             "overdue_count": 0,
         }
 
+        mock_db = MagicMock()
+        mock_tx = MagicMock()
+        mock_tx.__aenter__ = AsyncMock(return_value=mock_tx)
+        mock_tx.__aexit__ = AsyncMock(return_value=None)
+        mock_db.begin.return_value = mock_tx
+        mock_db.execute = AsyncMock()
+
+        from contextlib import asynccontextmanager
+
+        @asynccontextmanager
+        async def mock_session():
+            yield mock_db
+
         with patch.object(settings, "ENABLE_LEGACY_SINGLE_TENANT_NAMESPACE", True):
-            with patch("app.agents.admin_assistant.TOOL_FUNCTIONS", {
-                "get_revenue_summary": AsyncMock(return_value=mock_revenue)
-            }):
+            with (
+                patch("app.agents.admin_assistant.AsyncSessionLocal", side_effect=mock_session),
+                patch(
+                    "app.agents.admin_assistant.TOOL_FUNCTIONS",
+                    {"get_revenue_summary": AsyncMock(return_value=mock_revenue)},
+                ),
+            ):
                 state = {
                     "query": "revenue",
                     "tenant_id": settings.DEFAULT_INSTITUTION_ID,
@@ -229,6 +247,7 @@ class TestAdminAssistantLangGraphExecution:
 # 3. Route-Level Endpoint Security & Tenant Injection Rejection
 # =====================================================================
 
+
 class TestAdminAssistantRouteSecurity:
     """Verifies POST /agents/admin-assistant/chat authentication, validation, and isolation."""
 
@@ -244,7 +263,21 @@ class TestAdminAssistantRouteSecurity:
         admin_user = create_mock_user("admin", institution_id="inst-alpha")
         token = create_access_token({"sub": str(admin_user.id), "role": admin_user.role})
 
+        mock_db = AsyncMock()
+        inst = Institution(id=PILOT_INSTITUTION_UUID, name="Pilot School", slug="eduintel-pilot", is_active=True)
+        mem = InstitutionMembership(
+            id=uuid.uuid4(),
+            institution_id=PILOT_INSTITUTION_UUID,
+            user_id=admin_user.id,
+            role="admin",
+            status="active",
+        )
+        mock_result = MagicMock()
+        mock_result.all.return_value = [(mem, inst)]
+        mock_db.execute.return_value = mock_result
+
         app.dependency_overrides[get_current_user] = lambda: admin_user
+        app.dependency_overrides[get_db] = lambda: mock_db
         try:
             transport = ASGITransport(app=app)
             async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -268,6 +301,19 @@ class TestAdminAssistantRouteSecurity:
         admin_user = create_mock_user("admin", institution_id="inst-alpha")
         token = create_access_token({"sub": str(admin_user.id), "role": admin_user.role})
 
+        mock_db = AsyncMock()
+        inst = Institution(id=PILOT_INSTITUTION_UUID, name="Pilot School", slug="eduintel-pilot", is_active=True)
+        mem = InstitutionMembership(
+            id=uuid.uuid4(),
+            institution_id=PILOT_INSTITUTION_UUID,
+            user_id=admin_user.id,
+            role="admin",
+            status="active",
+        )
+        mock_result = MagicMock()
+        mock_result.all.return_value = [(mem, inst)]
+        mock_db.execute.return_value = mock_result
+
         invalid_sessions = [
             "session with spaces",
             "session/slash",
@@ -277,6 +323,7 @@ class TestAdminAssistantRouteSecurity:
         ]
 
         app.dependency_overrides[get_current_user] = lambda: admin_user
+        app.dependency_overrides[get_db] = lambda: mock_db
         try:
             transport = ASGITransport(app=app)
             async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -296,7 +343,13 @@ class TestAdminAssistantRouteSecurity:
         admin_no_tenant = create_mock_user("admin", institution_id=None)
         token = create_access_token({"sub": str(admin_no_tenant.id), "role": admin_no_tenant.role})
 
+        mock_db = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.all.return_value = []
+        mock_db.execute.return_value = mock_result
+
         app.dependency_overrides[get_current_user] = lambda: admin_no_tenant
+        app.dependency_overrides[get_db] = lambda: mock_db
         with patch.object(settings, "ENABLE_LEGACY_SINGLE_TENANT_NAMESPACE", False):
             try:
                 transport = ASGITransport(app=app)
@@ -307,7 +360,8 @@ class TestAdminAssistantRouteSecurity:
                         json={"session_id": "sess-001", "query": "Summary"},
                     )
                     assert res.status_code == 403
-                    assert "Tenant context required" in res.json()["detail"]
+                    detail = res.json()["detail"]
+                    assert "does not belong to any active institution" in detail or "Tenant context" in detail
             finally:
                 app.dependency_overrides.clear()
 
@@ -330,10 +384,101 @@ class TestAdminAssistantRouteSecurity:
         finally:
             app.dependency_overrides.clear()
 
+    @pytest.mark.asyncio
+    async def test_chat_telemetry_attributed_to_tenant_institution_id(self):
+        """SEC-S3-04: Admin assistant telemetry is explicitly bound to caller's institution_id.
+
+        Verifies that Tenant Beta's chat interactions pass Beta's institution_id to
+        log_ai_query, log_llm_usage, and log_agent_trace, ensuring logs never silently fall back
+        to PILOT_INSTITUTION_UUID.
+        """
+        inst_beta_id = uuid.UUID("22222222-2222-2222-2222-222222222222")
+        admin_beta = create_mock_user("admin", institution_id=str(inst_beta_id))
+        token = create_access_token({"sub": str(admin_beta.id), "role": admin_beta.role})
+
+        mock_db = AsyncMock()
+        inst = Institution(id=inst_beta_id, name="Beta Academy", slug="beta-academy", is_active=True)
+        mem = InstitutionMembership(
+            id=uuid.uuid4(),
+            institution_id=inst_beta_id,
+            user_id=admin_beta.id,
+            role="admin",
+            status="active",
+        )
+        mock_result = MagicMock()
+        mock_result.all.return_value = [(mem, inst)]
+        mock_db.execute.return_value = mock_result
+
+        mock_usage_obj = MagicMock()
+        mock_chat_response = {
+            "answer": "Beta institutional metrics summary.",
+            "tools_used": ["get_student_teacher_counts"],
+            "session_id": "sess-beta-99",
+            "trace_id": "tr-beta-12345",
+            "llm_usage": {"admin-assistant/generate": mock_usage_obj},
+            "trace_steps": [{"node_name": "generate", "step_order": 1, "duration_ms": 150, "status": "ok"}],
+        }
+
+        mock_log_ai_query = AsyncMock()
+        mock_log_llm_usage = AsyncMock()
+        mock_log_agent_trace = AsyncMock()
+
+        app.dependency_overrides[get_current_user] = lambda: admin_beta
+        app.dependency_overrides[get_db] = lambda: mock_db
+
+        with (
+            patch("app.agents.router.chat_with_admin_assistant", AsyncMock(return_value=mock_chat_response)),
+            patch("app.agents.router.log_ai_query", mock_log_ai_query),
+            patch("app.agents.router.log_llm_usage", mock_log_llm_usage),
+            patch("app.agents.router.log_agent_trace", mock_log_agent_trace),
+        ):
+            try:
+                transport = ASGITransport(app=app)
+                async with AsyncClient(transport=transport, base_url="http://test") as client:
+                    res = await client.post(
+                        "/agents/admin-assistant/chat",
+                        headers={
+                            "Authorization": f"Bearer {token}",
+                            "X-Institution-Id": str(inst_beta_id),
+                        },
+                        json={"session_id": "sess-beta-99", "query": "Enrollment stats"},
+                    )
+                    assert res.status_code == 200
+                    data = res.json()
+                    assert data["answer"] == "Beta institutional metrics summary."
+                    assert data["tools_used"] == ["get_student_teacher_counts"]
+
+                    # 1. Assert log_ai_query was called with Beta institution_id (and NOT pilot)
+                    mock_log_ai_query.assert_awaited_once()
+                    ai_call_kwargs = mock_log_ai_query.await_args.kwargs
+                    assert ai_call_kwargs["institution_id"] == inst_beta_id
+                    assert ai_call_kwargs["institution_id"] != PILOT_INSTITUTION_UUID
+                    assert ai_call_kwargs["user_id"] == admin_beta.id
+                    assert ai_call_kwargs["endpoint"] == "admin-assistant/chat"
+
+                    # 2. Assert log_llm_usage was called with Beta institution_id (and NOT pilot)
+                    mock_log_llm_usage.assert_awaited_once()
+                    llm_call_kwargs = mock_log_llm_usage.await_args.kwargs
+                    assert llm_call_kwargs["institution_id"] == inst_beta_id
+                    assert llm_call_kwargs["institution_id"] != PILOT_INSTITUTION_UUID
+                    assert llm_call_kwargs["endpoint"] == "admin-assistant/generate"
+                    assert llm_call_kwargs["usage"] == mock_usage_obj
+
+                    # 3. Assert log_agent_trace was called with Beta institution_id (and NOT pilot)
+                    mock_log_agent_trace.assert_awaited_once()
+                    trace_call_kwargs = mock_log_agent_trace.await_args.kwargs
+                    assert trace_call_kwargs["institution_id"] == inst_beta_id
+                    assert trace_call_kwargs["institution_id"] != PILOT_INSTITUTION_UUID
+                    assert trace_call_kwargs["agent_name"] == "admin-assistant"
+                    assert trace_call_kwargs["trace_id"] == "tr-beta-12345"
+            finally:
+                app.dependency_overrides.clear()
+
 
 # =====================================================================
 # 4. Debug Endpoints Authorization & Isolation
 # =====================================================================
+
 
 class TestAdminDebugEndpointsIsolation:
     """Verifies that all /admin/debug/* reporting endpoints fail closed for tenant administrators."""
@@ -348,7 +493,6 @@ class TestAdminDebugEndpointsIsolation:
             "/admin/debug/teacher-grading-performance",
             "/admin/debug/revenue-summary",
             "/admin/debug/attendance-stats",
-            "/admin/dashboard",
         ],
     )
     async def test_debug_endpoints_return_403_in_multi_tenant_mode(self, endpoint):
@@ -397,6 +541,7 @@ class TestAdminDebugEndpointsIsolation:
 # 5. Session Memory Isolation, Bounded Retention & Eviction
 # =====================================================================
 
+
 class TestSessionMemoryIsolationAndBounding:
     """Verifies namespaced conversation memory, capacity eviction (LRU), and TTL pruning."""
 
@@ -418,10 +563,13 @@ class TestSessionMemoryIsolationAndBounding:
         key_b = f"{tenant_b}:{user_2}:{session_id}"
 
         # Tenant A records a conversation
-        _save_namespaced_session(key_a, [
-            {"role": "user", "content": "Confidential School Alpha question"},
-            {"role": "assistant", "content": "School Alpha answer"},
-        ])
+        _save_namespaced_session(
+            key_a,
+            [
+                {"role": "user", "content": "Confidential School Alpha question"},
+                {"role": "assistant", "content": "School Alpha answer"},
+            ],
+        )
 
         # Tenant B queries the exact same session_id
         history_b = _get_namespaced_session(key_b)
@@ -449,10 +597,7 @@ class TestSessionMemoryIsolationAndBounding:
     def test_session_history_turn_limit_bounding(self):
         """Session history is bounded to MAX_TURNS_PER_SESSION (20 messages)."""
         key = "tenant:user:sess"
-        oversized_history = [
-            {"role": "user" if i % 2 == 0 else "assistant", "content": f"msg {i}"}
-            for i in range(35)
-        ]
+        oversized_history = [{"role": "user" if i % 2 == 0 else "assistant", "content": f"msg {i}"} for i in range(35)]
 
         _save_namespaced_session(key, oversized_history)
         retrieved = _get_namespaced_session(key)
