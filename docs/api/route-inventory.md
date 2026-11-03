@@ -1,6 +1,6 @@
 # EduIntel AI — API Route Inventory
 
-This inventory documents all **57 endpoints** across the **16 routers** mounted in the FastAPI application ([`backend/app/main.py`](file:///home/dell/projects/eduIntel/backend/app/main.py)) on branch `develop/production-readiness`.
+This inventory documents all **66 endpoints** across the **17 routers** mounted in the FastAPI application ([`backend/app/main.py`](file:///home/dell/projects/eduIntel/backend/app/main.py)) on branch `develop/production-readiness`.
 
 ---
 
@@ -10,18 +10,19 @@ This inventory documents all **57 endpoints** across the **16 routers** mounted 
 |---|---|:---:|---|
 | **Health & Core** | `/` | 2 | Public |
 | **Authentication** | `/api/auth` | 4 | Public |
+| **Institutions & Tenants** | `/institutions` | 6 | Authenticated / Platform Admin |
 | **Users & Profiles** | `/api/users` | 3 | Authenticated / Specific Roles |
-| **Student Portal** | `/api/student` | 8 | `student` |
-| **Teacher Portal** | `/api/teacher` | 8 | `teacher` |
-| **Admin Portal** | `/api/admin` | 10 | `admin` |
+| **Student Portal** | `/api/student` | 8 | `student` (Tenant Scoped) |
+| **Teacher Portal** | `/api/teacher` | 8 | `teacher` (Tenant Scoped) |
+| **Admin Portal** | `/api/admin` | 13 | `admin` (Tenant Scoped) |
 | **Announcements** | `/api/announcements`| 4 | Authenticated (`admin` for write) |
 | **OCR Processing** | `/api/ocr` | 2 | Authenticated (`teacher`/`student`) |
-| **RAG & Vectors** | `/api/rag` | 4 | Authenticated |
+| **RAG & Vectors** | `/api/rag` | 4 | Authenticated (Tenant Scoped) |
 | **Machine Learning**| `/api/ml` | 4 | Authenticated (`teacher`/`admin`) |
-| **AI Agents** | `/api/admin/assistant`, `/api/portal/assistant` | 2 | `admin` / Authenticated |
-| **Parent Reports** | `/api/reports` | 2 | `admin` / `teacher` |
-| **Observability** | `/api/observability`| 4 | `admin` |
-| **Total** | | **57** | |
+| **AI Agents** | `/api/admin/assistant`, `/api/portal/assistant` | 2 | `admin` / Authenticated (Tenant Scoped) |
+| **Parent Reports** | `/api/reports` | 2 | `admin` / `teacher` (Tenant Scoped) |
+| **Observability** | `/api/observability`| 4 | `admin` (Tenant Scoped) |
+| **Total** | | **66** | |
 
 ---
 
@@ -46,7 +47,20 @@ This inventory documents all **57 endpoints** across the **16 routers** mounted 
 
 ---
 
-## 3. Users Router (`/api/users`)
+## 3. Institutions & Multi-Tenancy Router (`/institutions`)
+
+| Method | Path | Auth / Role | Description | Request Body | Response |
+|---|---|:---:|---|---|---|
+| `POST` | `/institutions` | `admin` | Create new institution | `InstitutionCreate` (name, slug, domain) | `201 Created` (`InstitutionOut`) |
+| `GET` | `/institutions` | `admin` | List registered institutions | None | `200 OK` (`List[InstitutionOut]`) |
+| `GET` | `/institutions/{id}` | Authenticated | Retrieve institution details by ID | None | `200 OK` (`InstitutionOut`) |
+| `GET` | `/institutions/by-slug/{slug}`| Public / Auth | Lookup institution by subdomain slug | None | `200 OK` (`InstitutionOut`) |
+| `POST` | `/institutions/{id}/members` | `admin` | Assign user to institution with role | `MembershipCreate` (user_id, role) | `201 Created` (`MembershipOut`) |
+| `GET` | `/institutions/{id}/members` | `admin` | List members and roles for institution | None | `200 OK` (`List[MembershipOut]`) |
+
+---
+
+## 4. Users Router (`/api/users`)
 
 | Method | Path | Auth / Role | Description | Request Body | Response |
 |---|---|:---:|---|---|---|

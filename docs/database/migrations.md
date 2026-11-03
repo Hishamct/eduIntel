@@ -20,13 +20,13 @@ This document specifies the migration architecture, revision history, and schema
       await connectable.dispose()
   ```
 - **Tracking Table**: Current migration state is tracked in the `alembic_version` table in PostgreSQL.
-- **Current Head Revision**: `d4f6a2b5e0c7` (`0020_d4f6a2b5e0c7_add_agent_trace_logs_table.py`).
+- **Current Head Revision**: `f6b8c0d2e4a6` (`0022_f6b8c0d2e4a6_enable_postgresql_rls.py`).
 
 ---
 
-## 2. Migration Revision History (20 Revisions)
+## 2. Migration Revision History (22 Revisions)
 
-Below is the chronological sequence of migrations shaping the current database schema, organized with standardized 4-digit sequential numeric prefixes (`0001_` through `0020_`):
+Below is the chronological sequence of migrations shaping the current database schema, organized with standardized 4-digit sequential numeric prefixes (`0001_` through `0022_`):
 
 | Step | Revision ID | Down Revision | Script Name | Core DDL Operations |
 |:---:|---|---|---|---|
@@ -49,7 +49,9 @@ Below is the chronological sequence of migrations shaping the current database s
 | **17**| `a1c3f9e2b7d4` | `361abb3e7a6e` | `0017_a1c3f9e2b7d4_add_audit_log_redaction_columns.py` | Adds `pii_redactions_count` and `prompt_injection_detected` columns. |
 | **18**| `b2d4e0f3c8a5` | `a1c3f9e2b7d4` | `0018_b2d4e0f3c8a5_add_audit_log_socratic_columns.py` | Adds `is_socratic_redirect` flag to `doubt_messages` and audit logs. |
 | **19**| `c3e5f1a4d9b6` | `b2d4e0f3c8a5` | `0019_c3e5f1a4d9b6_add_llm_usage_logs_table.py` | Creates `llm_cost_logs` table tracking token usage and cost in INR (₹). |
-| **20**| `d4f6a2b5e0c7` | `c3e5f1a4d9b6` | `0020_d4f6a2b5e0c7_add_agent_trace_logs_table.py` | **(HEAD)** Creates `agent_trace_logs` for LangGraph node execution telemetry. |
+| **20**| `d4f6a2b5e0c7` | `c3e5f1a4d9b6` | `0020_d4f6a2b5e0c7_add_agent_trace_logs_table.py` | Creates `agent_trace_logs` for LangGraph node execution telemetry. |
+| **21**| `e5a7b9c1d3f5` | `d4f6a2b5e0c7` | `0021_e5a7b9c1d3f5_create_institutions_and_tenant_schema.py` | Creates `institutions`, `institution_memberships`, adds `institution_id` FKs and composite indexes to all 17 tenant tables, seeds & backfills pilot institution. |
+| **22**| `f6b8c0d2e4a6` | `e5a7b9c1d3f5` | `0022_f6b8c0d2e4a6_enable_postgresql_rls.py` | **(HEAD)** Enables and forces PostgreSQL Row-Level Security (RLS) on all 17 tenant-owned tables with `app.current_institution_id` session policies for unprivileged role `eduintel`. |
 
 ---
 

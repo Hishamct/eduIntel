@@ -112,6 +112,46 @@ def require_role(*allowed_roles: str):
     return role_checker
 ```
 
+### 2.1.1. Multi-Tenant Authorization & Session Scoping (Phase 2 Stage 3)
+
+In Stage 3, institutional multi-tenancy was decoupled from global user identity:
+
+```python
+async def get_tenant_context(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> TenantContext:
+    # 1. Resolve institution_id from X-Institution-ID header, query param, or user default membership
+    # 2. Query institution_memberships table for (institution_id, current_user.id)
+    # 3. Fail closed (403) if user is not an active member of this institution
+    # 4. Return TenantContext(institution_id, role, membership_id)
+    ...
+
+def require_tenant_role(*allowed_roles: str):
+    async def tenant_role_checker(
+        tenant: TenantContext = Depends(get_tenant_context),
+    ) -> TenantContext:
+        if tenant.role not in allowed_roles:
+            raise HTTPException(403, detail="Insufficient institutional role permissions")
+        return tenant
+    return tenant_role_checker
+
+async def get_tenant_db(
+    tenant: TenantContext = Depends(get_tenant_context),
+    session: AsyncSession = Depends(get_db),
+) -> AsyncGenerator[AsyncSession, None]:
+    # Configures PostgreSQL RLS session variable for this transaction
+    await session.execute(
+        text("SELECT set_config('app.current_institution_id', :id, true)"),
+        {"id": str(tenant.institution_id)},
+    )
+    yield session
+```
+
+- **SEC-S3-03 (Tenant-Specific Role Enforcement):** Study material downloads evaluate institutional `tenant.role` rather than `current_user.role`, preventing cross-tenant privilege confusion for users holding differing roles across institutes.
+- **Fail-Closed Default:** With `ENABLE_LEGACY_SINGLE_TENANT_NAMESPACE: bool = False`, unauthenticated or unmigrated requests fail closed (`403 Forbidden`).
+
 ### 2.2. Multi-Factor Relationship-Based Authorization (SEC-03, SEC-06, SEC-07)
 
 Simple role checks (`require_role("teacher")`) are insufficient for multi-tenant and multi-class environments. EduIntel enforces student-specific academic relationships:
