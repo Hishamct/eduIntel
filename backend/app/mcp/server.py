@@ -5,6 +5,7 @@ connects to this as an MCP client.
 """
 
 import smtplib
+import uuid
 from email.mime.text import MIMEText
 
 from mcp.server.fastmcp import FastMCP
@@ -12,21 +13,49 @@ from sqlalchemy import select
 
 from app.admin.models import Attendance
 from app.core.config import settings
-from app.core.database import AsyncSessionLocal
+from app.core.tenant import (
+    PILOT_INSTITUTION_UUID,
+    normalize_institution_id,
+    tenant_session_scope,
+)
 from app.teacher.models import ExamResult
 
 mcp = FastMCP("eduintel-mcp")
 
 
 @mcp.tool()
-async def get_student_data(student_id: str) -> dict:
+async def get_student_data(student_id: str, institution_id: str | None = None) -> dict:
     """Get a student's recent exam results and attendance percentage for a parent progress report."""
-    async with AsyncSessionLocal() as db:
+    try:
+        student_uuid = uuid.UUID(str(student_id))
+    except (ValueError, TypeError, AttributeError) as err:
+        raise ValueError(f"Invalid student UUID format '{student_id}': {err}") from err
+
+    inst_uuid: uuid.UUID | None = None
+
+    if institution_id:
+        try:
+            inst_uuid = normalize_institution_id(institution_id)
+        except Exception as err:
+            raise ValueError(f"Invalid institution_id '{institution_id}': {err}") from err
+        if inst_uuid is None:
+            raise ValueError(f"Invalid institution_id '{institution_id}'")
+    else:
+        # Non-tenant callers: allowed only if legacy single-tenant namespace is explicitly enabled
+        if getattr(settings, "ENABLE_LEGACY_SINGLE_TENANT_NAMESPACE", False):
+            inst_uuid = PILOT_INSTITUTION_UUID
+        else:
+            raise ValueError("institution_id is required for tenant-scoped student data retrieval.")
+
+    async with tenant_session_scope(inst_uuid) as db:
         exam_results = (
             (
                 await db.execute(
                     select(ExamResult)
-                    .where(ExamResult.student_id == student_id)
+                    .where(
+                        ExamResult.student_id == student_uuid,
+                        ExamResult.institution_id == inst_uuid,
+                    )
                     .order_by(ExamResult.exam_date.desc())
                     .limit(5)
                 )
@@ -38,7 +67,10 @@ async def get_student_data(student_id: str) -> dict:
         attendance = (
             (
                 await db.execute(
-                    select(Attendance).where(Attendance.student_id == student_id)
+                    select(Attendance).where(
+                        Attendance.student_id == student_uuid,
+                        Attendance.institution_id == inst_uuid,
+                    )
                 )
             )
             .scalars()

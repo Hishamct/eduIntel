@@ -19,6 +19,8 @@ from app.admin.service import (
     get_timetable_coverage,
 )
 from app.core.database import AsyncSessionLocal  # adjust if named differently
+from app.core.tenant import normalize_institution_id
+from sqlalchemy import text
 from app.core.llm_client import (
     LLMCallUsage,
     decide_tools_with_usage,
@@ -306,75 +308,87 @@ async def execute_tools_node(state: AgentState) -> AgentState:
         return {**state, "tool_results": []}
 
     tenant_id = state.get("tenant_id")
+    inst_uuid = None
+    if tenant_id:
+        try:
+            inst_uuid = normalize_institution_id(tenant_id)
+        except Exception:
+            inst_uuid = None
 
     async with AsyncSessionLocal() as db:
-        for call in state["tool_calls"]:
-            tool_name = call.get("name", "")
-            raw_args = call.get("args") or {}
+        async with db.begin():
+            if inst_uuid:
+                await db.execute(
+                    text("SELECT set_config('app.current_institution_id', :inst_id, true)"),
+                    {"inst_id": str(inst_uuid)},
+                )
+            for call in state["tool_calls"]:
+                tool_name = call.get("name", "")
+                raw_args = call.get("args") or {}
 
-            # 1. Enforce strict tool whitelist — explicitly block arbitrary SQL tools or unapproved calls
-            if tool_name not in TOOL_FUNCTIONS or tool_name not in APPROVED_TOOL_SCHEMAS:
-                tool_results.append({
-                    "name": tool_name,
-                    "result": {
-                        "error": (
-                            f"Tool '{tool_name}' is not authorized. "
-                            "Arbitrary queries and unapproved tools are prohibited."
-                        )
-                    },
-                })
-                continue
+                # 1. Enforce strict tool whitelist — explicitly block arbitrary SQL tools or unapproved calls
+                if tool_name not in TOOL_FUNCTIONS or tool_name not in APPROVED_TOOL_SCHEMAS:
+                    tool_results.append({
+                        "name": tool_name,
+                        "result": {
+                            "error": (
+                                f"Tool '{tool_name}' is not authorized. "
+                                "Arbitrary queries and unapproved tools are prohibited."
+                            )
+                        },
+                    })
+                    continue
 
-            # 2. Enforce fail-closed requirement on tenant context
-            if not tenant_id:
-                tool_results.append({
-                    "name": tool_name,
-                    "result": {
-                        "status": "unavailable",
-                        "error": "Trusted tenant context is required for administrative reporting tools.",
-                    },
-                })
-                continue
+                # 2. Enforce fail-closed requirement on tenant context
+                if not tenant_id:
+                    tool_results.append({
+                        "name": tool_name,
+                        "result": {
+                            "status": "unavailable",
+                            "error": "Trusted tenant context is required for administrative reporting tools.",
+                        },
+                    })
+                    continue
 
-            # 3. Enforce typed Pydantic validation on arguments
-            schema_cls = APPROVED_TOOL_SCHEMAS[tool_name]
-            try:
-                validated_model = schema_cls(**raw_args)
-                clean_args = validated_model.model_dump()
-            except Exception as val_err:
-                tool_results.append({
-                    "name": tool_name,
-                    "result": {
-                        "error": f"Argument validation rejected for '{tool_name}': {val_err}"
-                    },
-                })
-                continue
+                # 3. Enforce typed Pydantic validation on arguments
+                schema_cls = APPROVED_TOOL_SCHEMAS[tool_name]
+                try:
+                    validated_model = schema_cls(**raw_args)
+                    clean_args = validated_model.model_dump()
+                except Exception as val_err:
+                    tool_results.append({
+                        "name": tool_name,
+                        "result": {
+                            "error": f"Argument validation rejected for '{tool_name}': {val_err}"
+                        },
+                    })
+                    continue
 
-            # 4. Execute approved reporting tool function with tenant binding
-            func = TOOL_FUNCTIONS[tool_name]
-            try:
-                result = await func(db=db, tenant_id=tenant_id, **clean_args)
-                # 5. Scrub sensitive internal database identifiers from LLM prompt context
-                if isinstance(result, dict) and "pending_teacher_ids" in result:
-                    result = {k: v for k, v in result.items() if k != "pending_teacher_ids"}
-                tool_results.append({"name": tool_name, "result": result})
-            except TenantAggregationBlockedError as blocked_err:
-                tool_results.append({
-                    "name": tool_name,
-                    "result": {
-                        "status": "unavailable",
-                        "error": (
-                            f"Reporting data for '{tool_name}' is currently unavailable for your institution: "
-                            f"{blocked_err}"
-                        ),
-                    },
-                })
-            except Exception:
-                # 6. Safe error handling: never leak database credentials, connection strings, or internal tracebacks
-                tool_results.append({
-                    "name": tool_name,
-                    "result": {"error": "Reporting query execution failed safely."},
-                })
+                # 4. Execute approved reporting tool function with tenant binding
+                func = TOOL_FUNCTIONS[tool_name]
+                try:
+                    result = await func(db=db, tenant_id=tenant_id, **clean_args)
+                    # 5. Scrub sensitive internal database identifiers from LLM prompt context
+                    if isinstance(result, dict) and "pending_teacher_ids" in result:
+                        result = {k: v for k, v in result.items() if k != "pending_teacher_ids"}
+                    tool_results.append({"name": tool_name, "result": result})
+                except TenantAggregationBlockedError as blocked_err:
+                    tool_results.append({
+                        "name": tool_name,
+                        "result": {
+                            "status": "unavailable",
+                            "error": (
+                                f"Reporting data for '{tool_name}' is currently unavailable for your institution: "
+                                f"{blocked_err}"
+                            ),
+                        },
+                    })
+                except Exception:
+                    # 6. Safe error handling: never leak database credentials, connection strings, or internal tracebacks
+                    tool_results.append({
+                        "name": tool_name,
+                        "result": {"error": "Reporting query execution failed safely."},
+                    })
 
     return {**state, "tool_results": tool_results}
 

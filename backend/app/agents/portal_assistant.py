@@ -1,4 +1,6 @@
+import time
 import uuid
+from collections import OrderedDict
 from typing import TypedDict
 
 from langgraph.graph import END, StateGraph
@@ -11,13 +13,18 @@ from app.guardrails.prompt_injection import (
 from app.observability.tracing import traced_node
 from app.rag.client import get_portal_help_collection
 
-SYSTEM_SCOPE = """You are the EduIntel AI Portal Assistant — you help students understand how to use the platform itself: submitting homework, using the doubt forum, finding study materials, checking their dashboard, and account basics like password resets.
+SYSTEM_SCOPE = """You are the EduIntel AI Portal Assistant — you help students understand how to use
+the platform itself: submitting homework, using the doubt forum, finding study materials,
+checking their dashboard, and account basics like password resets.
 
-You are NOT a subject-matter tutor. If a student asks a homework/academic question (math, physics, etc.), politely redirect them to the Doubt Forum instead of answering it yourself.
+You are NOT a subject-matter tutor. If a student asks a homework/academic question (math, physics, etc.),
+politely redirect them to the Doubt Forum instead of answering it yourself.
 
-Stay strictly within onboarding/how-to-use-the-platform topics. If asked something unrelated to the platform, politely decline and steer back to platform help.
+Stay strictly within onboarding/how-to-use-the-platform topics. If asked something unrelated
+to the platform, politely decline and steer back to platform help.
 
-CRITICAL: Only answer using the "Relevant help articles" section below. If the help articles do not contain the answer, respond only with:
+CRITICAL: Only answer using the "Relevant help articles" section below. If the help articles
+do not contain the answer, respond only with:
 "I don't have information on that in our help docs — please check with your teacher or try the Doubt Forum."
 Do NOT use outside/general knowledge to fill gaps, even if you think you know the answer."""
 
@@ -56,11 +63,7 @@ def retrieve_node(state: AgentState) -> AgentState:
 
     is_relevant = bool(distances) and min(distances) <= RELEVANCE_DISTANCE_THRESHOLD
 
-    context = (
-        "\n\n---\n\n".join(documents)
-        if documents
-        else "No relevant help articles found."
-    )
+    context = "\n\n---\n\n".join(documents) if documents else "No relevant help articles found."
 
     return {**state, "retrieved_context": context, "is_relevant": is_relevant}
 
@@ -108,13 +111,56 @@ graph.add_edge("generate", END)
 portal_assistant_graph = graph.compile()
 
 
-# Simple in-memory session store: {session_id: [{"role":..., "content":...}, ...]}
-# resets on server restart, not persisted to Postgres
+# In-memory session store with LRU eviction and TTL bounding:
+# {namespaced_key: {"history": [...], "last_accessed": timestamp}}
+MAX_PORTAL_SESSIONS = 1000
+MAX_TURNS_PER_SESSION = 20  # 10 user + 10 assistant turns
+SESSION_TTL_SECONDS = 86400  # 24 hours
 
-_conversation_sessions: dict[str, list[dict]] = {}
+_portal_conversation_sessions: OrderedDict[str, dict] = OrderedDict()
+_conversation_sessions = _portal_conversation_sessions
 
 
-def chat_with_portal_assistant(session_id: str, query: str) -> dict:
+def _get_portal_namespaced_session(namespaced_key: str) -> list[dict]:
+    """Retrieve session history with TTL validation and LRU touch."""
+    now = time.time()
+    session = _portal_conversation_sessions.get(namespaced_key)
+    if not session:
+        return []
+    if now - session.get("last_accessed", 0) > SESSION_TTL_SECONDS:
+        _portal_conversation_sessions.pop(namespaced_key, None)
+        return []
+    _portal_conversation_sessions.move_to_end(namespaced_key)
+    return list(session.get("history", []))
+
+
+def _save_portal_namespaced_session(namespaced_key: str, history: list[dict]) -> None:
+    """Save session history with turn bounding, LRU ordering, and capacity eviction."""
+    now = time.time()
+    trimmed_history = history[-MAX_TURNS_PER_SESSION:]
+    if namespaced_key in _portal_conversation_sessions:
+        _portal_conversation_sessions.move_to_end(namespaced_key)
+    _portal_conversation_sessions[namespaced_key] = {
+        "history": trimmed_history,
+        "last_accessed": now,
+    }
+    while len(_portal_conversation_sessions) > MAX_PORTAL_SESSIONS:
+        _portal_conversation_sessions.popitem(last=False)
+
+
+def _reset_portal_conversation_sessions() -> None:
+    """Testing helper to clear in-memory portal sessions."""
+    _portal_conversation_sessions.clear()
+
+
+def chat_with_portal_assistant(
+    session_id: str,
+    query: str,
+    tenant_id: str | None = None,
+    user_id: uuid.UUID | str | None = None,
+) -> dict:
+    namespaced_key = f"{tenant_id}:{user_id}:{session_id}" if tenant_id and user_id else session_id
+
     # Guardrail: check for prompt-injection attempts BEFORE this text ever
     # reaches an LLM prompt or the retrieval pipeline. Flagged messages
     # are refused immediately and never enter conversation history as a
@@ -143,13 +189,13 @@ def chat_with_portal_assistant(session_id: str, query: str) -> dict:
             ],
         }
 
-    history = _conversation_sessions.get(session_id, [])
+    history = _get_portal_namespaced_session(namespaced_key)
     trace_id = str(uuid.uuid4())
 
     result = portal_assistant_graph.invoke(
         {
             "query": query,
-            "history": history,
+            "history": list(history),
             "retrieved_context": "",
             "is_relevant": False,
             "answer": "",
@@ -161,7 +207,7 @@ def chat_with_portal_assistant(session_id: str, query: str) -> dict:
 
     history.append({"role": "user", "content": query})
     history.append({"role": "assistant", "content": result["answer"]})
-    _conversation_sessions[session_id] = history
+    _save_portal_namespaced_session(namespaced_key, history)
 
     return {
         "answer": result["answer"],

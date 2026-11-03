@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.admin.models import Attendance, Timetable
-from app.core.database import get_db
+from app.core.tenant import TenantContext, get_tenant_db, require_tenant_role
 from app.reports.parent_report_agent import generate_and_send_report
 from app.student.models import HomeworkSubmission
 from app.teacher.models import ExamResult
@@ -29,7 +29,8 @@ async def trigger_parent_report(
     student_id: str,
     payload: ParentReportRequest | None = None,
     current_user: User = Depends(require_role("teacher", "admin")),
-    db: AsyncSession = Depends(get_db),
+    tenant: TenantContext = Depends(require_tenant_role("teacher", "admin")),
+    db: AsyncSession = Depends(get_tenant_db),
 ):
     try:
         uid = uuid.UUID(student_id)
@@ -42,7 +43,11 @@ async def trigger_parent_report(
     result = await db.execute(
         select(User, StudentProfile)
         .join(StudentProfile, StudentProfile.user_id == User.id)
-        .where(User.id == uid, User.role == "student")
+        .where(
+            User.id == uid,
+            User.role == "student",
+            StudentProfile.institution_id == tenant.institution_id,
+        )
     )
     row = result.first()
     if not row:
@@ -52,14 +57,10 @@ async def trigger_parent_report(
         )
 
     student_user, profile = row
-    student_section = (
-        f"{profile.grade}-{profile.section}"
-        if profile.grade and profile.section
-        else None
-    )
+    student_section = f"{profile.grade}-{profile.section}" if profile.grade and profile.section else None
 
     # Multi-Factor Teacher Authorization Verification
-    if current_user.role == "teacher":
+    if tenant.role == "teacher":
         if not student_section:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -70,6 +71,7 @@ async def trigger_parent_report(
         tt_res = await db.execute(
             select(Timetable.id)
             .where(
+                Timetable.institution_id == tenant.institution_id,
                 Timetable.teacher_id == current_user.id,
                 Timetable.class_section == student_section,
             )
@@ -86,6 +88,7 @@ async def trigger_parent_report(
         exam_link = await db.execute(
             select(ExamResult.id)
             .where(
+                ExamResult.institution_id == tenant.institution_id,
                 ExamResult.student_id == uid,
                 ExamResult.entered_by == current_user.id,
                 ExamResult.class_section == student_section,
@@ -95,6 +98,7 @@ async def trigger_parent_report(
         att_link = await db.execute(
             select(Attendance.id)
             .where(
+                Attendance.institution_id == tenant.institution_id,
                 Attendance.student_id == uid,
                 Attendance.marked_by == current_user.id,
                 Attendance.class_section == student_section,
@@ -104,6 +108,7 @@ async def trigger_parent_report(
         hw_link = await db.execute(
             select(HomeworkSubmission.id)
             .where(
+                HomeworkSubmission.institution_id == tenant.institution_id,
                 HomeworkSubmission.student_id == uid,
                 HomeworkSubmission.graded_by == current_user.id,
                 HomeworkSubmission.status == "graded",
@@ -140,6 +145,7 @@ async def trigger_parent_report(
             parent_email=profile.parent_email,
             db=db,
             generated_by_user_id=current_user.id,
+            institution_id=tenant.institution_id,
         )
         return report_result
     except HTTPException:
@@ -154,7 +160,6 @@ async def trigger_parent_report(
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=(
-                "Failed to generate or deliver progress report. "
-                "Please contact system support if this issue persists."
+                "Failed to generate or deliver progress report. Please contact system support if this issue persists."
             ),
         ) from e
