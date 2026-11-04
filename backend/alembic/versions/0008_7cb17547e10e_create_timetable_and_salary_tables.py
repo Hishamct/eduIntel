@@ -62,4 +62,6 @@ def downgrade() -> None:
     op.drop_table('timetable_entries')
     op.drop_index(op.f('ix_salary_records_teacher_id'), table_name='salary_records')
     op.drop_table('salary_records')
+    op.execute(sa.text("DROP TYPE IF EXISTS payment_status;"))
+    op.execute(sa.text("DROP TYPE IF EXISTS day_of_week;"))
     # ### end Alembic commands ###

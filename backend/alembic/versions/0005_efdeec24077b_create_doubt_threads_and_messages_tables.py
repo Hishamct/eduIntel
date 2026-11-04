@@ -56,4 +56,5 @@ def downgrade() -> None:
     op.drop_table('doubt_messages')
     op.drop_index(op.f('ix_doubt_threads_student_id'), table_name='doubt_threads')
     op.drop_table('doubt_threads')
+    op.execute(sa.text("DROP TYPE IF EXISTS doubt_status;"))
     # ### end Alembic commands ###
