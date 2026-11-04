@@ -234,6 +234,7 @@ async def enroll_student(
         name=name,
         role="student",
         is_active=True,
+        is_platform_admin=False,
     )
     db.add(user)
     await db.flush()  # assigns user.id without committing outer transaction
@@ -315,6 +316,7 @@ async def create_staff_user(
         hashed_password=hash_password(data.password),
         role=role,
         is_active=True,
+        is_platform_admin=False,
     )
     db.add(user)
     await db.flush()
