@@ -24,12 +24,12 @@ docs/
 │       └── 0006-cloud-database-target-rds-vs-supabase.md
 ├── api/
 │   ├── conventions.md                  # REST conventions, status codes, JSON format & auth headers
-│   └── route-inventory.md              # Complete catalog of all 57 endpoints across 16 routers
+│   └── route-inventory.md              # Complete catalog of all 66 endpoints across 17 routers
 ├── database/
-│   ├── schema-and-erd.md               # 19 PostgreSQL tables, relationships, indexes & Mermaid ERD
-│   └── migrations.md                   # Alembic migration history (20 revisions) and hygiene
+│   ├── schema-and-erd.md               # 21 PostgreSQL tables, composite indexes, RLS & Mermaid ERD
+│   └── migrations.md                   # Alembic migration history (23 revisions) and reversibility
 ├── security/
-│   ├── auth-and-rbac.md                # JWT authentication, role enforcement & Phase 0A SQLi containment
+│   ├── auth-and-rbac.md                # JWT authentication, HttpOnly cookies, tenant-scoping & RBAC
 │   └── guardrails-and-pii.md           # PII redaction, prompt injection defense, audit logs & anti-cheating
 ├── ai/
 │   ├── rag-architecture.md             # Dual vector collections, Gemini embeddings & Socratic flow
@@ -39,7 +39,7 @@ docs/
 │   ├── local-setup.md                  # Local development installation, environment variables & Docker
 │   └── standards-and-workflow.md       # Git branching, commit conventions, code formatting & review rules
 ├── testing/
-│   └── testing-strategy.md             # Pytest harness, test suites, mock strategies & coverage gaps
+│   └── testing-strategy.md             # Pytest harness, 21 test suites (334 tests), mock strategies
 ├── deployment/
 │   ├── docker-architecture.md          # Docker Compose configurations, volumes & networking
 │   └── deployment-topology.md          # Deployment topology: historical AWS, current local, proposed cloud
@@ -63,19 +63,23 @@ docs/
 
 ### 🔌 3. APIs & Communication
 - **[API Conventions](api/conventions.md)**: REST standard practices, response envelope formats, error handling structures, and HTTP status codes.
-- **[Route Inventory](api/route-inventory.md)**: Full inventory of 57 API endpoints with HTTP verbs, path parameters, role requirements, request schemas, and responses.
+- **[Route Inventory](api/route-inventory.md)**: Full inventory of 66 API endpoints with HTTP verbs, path parameters, role requirements, request schemas, and responses.
 
 ### 🗄️ 4. Data & Persistence
-- **[Schema and ERD](database/schema-and-erd.md)**: PostgreSQL relational models, data types, constraints, foreign key mappings, and entity relationship diagrams.
-- **[Database Migrations](database/migrations.md)**: Alembic migration sequence, baseline history, downgrade capabilities, and migration hygiene guidelines.
+- **[Schema and ERD](database/schema-and-erd.md)**: 21 PostgreSQL relational models, data types, constraints, foreign key mappings, Migration 0023 composite B-tree indexes, Row-Level Security policies, and entity relationship diagrams.
+- **[Database Migrations](database/migrations.md)**: Alembic migration sequence (23 revisions), baseline history, bidirectional downgrade reversibility, and ephemeral verification harness.
+- **[Phase 3 Database Integrity Implementation Plan](production-readiness/09-phase-3-database-integrity-implementation-plan.md)**: Structured plan for async connection pooling resilience, composite indexing, ephemeral migration verification, AEAD encrypted backups, and Level 4 disaster recovery drills.
+- **[Phase 3 Database Integrity Closure Report](production-readiness/10-phase-3-database-integrity-report.md)**: Final signed-off closure report certifying completion of Phase 03 across Stages 3A–3E (Verdict: **CERTIFIED PRODUCTION READY**).
 
 ### 🛡️ 5. Security & Governance
-- **[Authentication & RBAC](security/auth-and-rbac.md)**: Password hashing with bcrypt, JWT token issuance via `HttpOnly` cookies, dual-mode auth, FastAPI role-enforcing dependencies, and privilege escalation mitigations.
+- **[Authentication & RBAC](security/auth-and-rbac.md)**: Password hashing with bcrypt, JWT token issuance via `HttpOnly` cookies, dual-mode auth, `require_tenant_role` dependencies, and privilege escalation mitigations.
 - **[AI Guardrails & PII](security/guardrails-and-pii.md)**: Automated PII redaction engine (Aadhaar, phone, email, IP, credit cards), prompt injection defenses, and Socratic anti-cheating mechanisms.
 - **[Security Audit & Remediation Tracker](security/security-audit.md)**: Comprehensive vulnerability catalog and Phase 2B remediation tracker for SEC-01 through SEC-19.
-- **[Authorization Matrix](security/authorization-matrix.md)**: Complete endpoint-by-endpoint RBAC and multi-factor relational ownership matrix.
-- **[Phase 2B Security Closure Report](production-readiness/06-phase-2b-security-remediation-closure-report.md)**: Final signed-off closure report detailing the 10 remediated findings, 278 backend test cases, and 8 frontend test cases.
-- **[Multi-Tenant Architecture](architecture/multi-tenant-architecture.md)**: Foundational multi-tenant isolation specifications and schema partitioning design for Phase 2C.
+- **[Authorization Matrix](security/authorization-matrix.md)**: Complete endpoint-by-endpoint RBAC, institutional scoping, and multi-factor relational ownership matrix.
+- **[Phase 2B Security Closure Report](production-readiness/06-phase-2b-security-remediation-closure-report.md)**: Final signed-off closure report detailing the 10 remediated findings (SEC-01 through SEC-11).
+- **[Multi-Tenant Architecture](architecture/multi-tenant-architecture.md)**: Verified multi-tenant isolation specifications, membership model, and PostgreSQL RLS design.
+- **[Stage 3 Diff Review & Live RLS Validation](production-readiness/07-stage-3-diff-review-and-rls-validation-report.md)**: Independent diff review and empirical PostgreSQL 16 RLS engine validation report.
+- **[Stage 3 Multi-Tenancy Closure Audit](production-readiness/08-stage-3-closure-audit.md)**: Final closure audit certifying completion of Phase 2 Stage 3 (Verdict: **READY TO CLOSE**).
 
 ### 🤖 6. Artificial Intelligence & Analytics
 - **[RAG Architecture](ai/rag-architecture.md)**: Vector embedding pipelines using Google Gemini, persistent ChromaDB collections, chunking strategies, and Socratic query synthesis.
@@ -88,7 +92,7 @@ docs/
 - **[Testing Strategy](testing/testing-strategy.md)**: Test execution instructions, pytest fixtures, unit/integration boundaries, and mocking protocols.
 - **[Docker Architecture](deployment/docker-architecture.md)**: Container topology, volume persistence, multi-stage build patterns, and environment variable isolation.
 - **[Deployment Topology](deployment/deployment-topology.md)**: Deployment topology (decommissioned AWS, current local development, proposed Phase 8 cloud architecture).
-- **[Backup & Recovery](operations/backup-and-recovery.md)**: Comprehensive backup scripts (`pg_dump`, ChromaDB sync, upload archiving), restoration runbooks, and recovery verification.
+- **[Backup & Recovery](operations/backup-and-recovery.md)**: Authenticated AES-256-GCM backup engine (`scripts/backup.sh`), 4-step quiescence, isolated Level 4 restore sandbox drill (`scripts/restore.sh`), and verified RTO/RPO metrics.
 - **[Observability & Monitoring](operations/observability.md)**: LLM token tracking, INR expenditure calculations, trace logs, and future Prometheus/Grafana integrations.
 
 ---

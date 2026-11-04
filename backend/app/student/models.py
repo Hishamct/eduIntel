@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import Enum, Float, ForeignKey, String, Text
+from sqlalchemy import Enum, Float, ForeignKey, Index, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -12,6 +12,10 @@ from app.users.models import (
 
 class HomeworkSubmission(Base, TimestampMixin):
     __tablename__ = "homework_submissions"
+    __table_args__ = (
+        Index("ix_homework_sub_inst_student", "institution_id", "student_id"),
+        Index("ix_homework_sub_inst_status", "institution_id", "status"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     institution_id: Mapped[uuid.UUID] = mapped_column(

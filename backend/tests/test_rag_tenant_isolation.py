@@ -57,9 +57,7 @@ def create_mock_user(
         role=role,
         is_active=True,
     )
-    if institution_id:
-        # Dynamically attach trusted server-side institution_id for multi-tenant simulation
-        user.institution_id = institution_id
+    user.institution_id = institution_id
 
     if role == "student":
         user.student_profile = StudentProfile(

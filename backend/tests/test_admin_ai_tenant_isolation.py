@@ -63,8 +63,7 @@ def create_mock_user(
         role=role,
         is_active=True,
     )
-    if institution_id:
-        user.institution_id = institution_id
+    user.institution_id = institution_id
     return user
 
 

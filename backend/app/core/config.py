@@ -28,6 +28,17 @@ class Settings(BaseSettings):
     DEFAULT_INSTITUTION_ID: str = "00000000-0000-0000-0000-000000000001"
     ENABLE_LEGACY_SINGLE_TENANT_NAMESPACE: bool = False
 
+    # Database Connection Pool Settings (ADR-0002)
+    DB_POOL_SIZE: int = 10
+    DB_MAX_OVERFLOW: int = 5
+    DB_POOL_TIMEOUT: int = 30
+    DB_POOL_RECYCLE: int = 1800  # 30 minutes
+    DB_POOL_PRE_PING: bool = True
+    DB_ECHO: bool = False
+
+    # Disaster Recovery & Quiescence (ADR-0009)
+    MAINTENANCE_FLAG_PATH: str = "/tmp/eduintel_maintenance.flag"
+
     # Authentication & Cookie Security (SEC-10)
     AUTH_COOKIE_NAME: str = "access_token"
     AUTH_COOKIE_SAMESITE: str = "strict"

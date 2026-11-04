@@ -35,6 +35,15 @@ Create `backend/.env` containing the required configuration parameters:
 # Relational Database (PostgreSQL 16 via Docker Compose)
 DATABASE_URL=postgresql+asyncpg://eduintel:eduintel_dev@localhost:5432/eduintel
 
+# Database Connection Pooling (AsyncAdaptedQueuePool - ADR-0002)
+DB_POOL_SIZE=10
+DB_MAX_OVERFLOW=5
+DB_POOL_TIMEOUT=30
+DB_POOL_RECYCLE=1800
+DB_POOL_PRE_PING=True
+DB_ECHO=False
+MAINTENANCE_FLAG_PATH=/tmp/eduintel_maintenance.flag
+
 # Authentication & Security
 JWT_SECRET_KEY=development_jwt_secret_key_change_in_production_min_32_chars
 JWT_ALGORITHM=HS256
@@ -75,12 +84,18 @@ pip install -r requirements.txt
 ```
 
 ### Step 3: Run Database Migrations
-Apply all 20 Alembic migrations to construct the database schema:
+Apply all 23 Alembic migrations (revisions 0001 through 0023) to construct the database schema:
 ```bash
 alembic upgrade head
 
-# Verify active revision
+# Verify active revision reaches head
 alembic current
+# Expected: a7c8e9d0b1f2 (head)
+```
+
+To verify bidirectional migration reversibility in an isolated ephemeral database:
+```bash
+../scripts/verify_migrations.sh
 ```
 
 ### Step 4: Seed Development Data (Optional)
@@ -96,6 +111,17 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 - API Base: `http://localhost:8000`
 - Interactive Swagger UI: `http://localhost:8000/docs`
 - ReDoc UI: `http://localhost:8000/redoc`
+
+### Step 6: Backup & Disaster Recovery CLI Tools
+Capture a consistent, authenticated, multi-engine backup bundle:
+```bash
+../scripts/backup.sh
+```
+
+Execute an isolated disaster recovery drill into the disposable sandbox on port 5433:
+```bash
+../scripts/restore.sh
+```
 
 ---
 
@@ -121,12 +147,14 @@ npm run dev
 
 Run through these checks to ensure your local installation is fully functional:
 
-- [ ] `curl http://localhost:8000/health` returns `{"status": "healthy", "database": "connected"}`.
-- [ ] Swagger docs load at `http://localhost:8000/docs` with all 57 endpoints listed.
+- [ ] `curl http://localhost:8000/health` returns `{"status": "healthy", "latency_ms": ..., "pool": {...}}`.
+- [ ] Swagger docs load at `http://localhost:8000/docs` with all endpoints listed.
 - [ ] Login screen opens at `http://localhost:5173/login`.
 - [ ] Tests run successfully:
   ```bash
-  cd backend
+  cd backend && pytest tests/ -q
+  # Expected: 334 passed
+  ```
   ./venv/bin/pytest -v
   ```
 

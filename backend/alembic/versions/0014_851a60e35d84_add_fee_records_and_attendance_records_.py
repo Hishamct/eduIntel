@@ -71,4 +71,6 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_attendance_records_date'), table_name='attendance_records')
     op.drop_index(op.f('ix_attendance_records_class_section'), table_name='attendance_records')
     op.drop_table('attendance_records')
+    op.execute(sa.text("DROP TYPE IF EXISTS attendance_status;"))
+    op.execute(sa.text("DROP TYPE IF EXISTS fee_payment_status;"))
     # ### end Alembic commands ###

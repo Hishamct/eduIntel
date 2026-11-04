@@ -1,7 +1,7 @@
 import datetime
 import uuid
 
-from sqlalchemy import Date, ForeignKey, String, Text
+from sqlalchemy import Date, ForeignKey, Index, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -54,11 +54,12 @@ class StudyMaterial(Base, TimestampMixin):
     teacher: Mapped["User"] = relationship()
 
 
-from sqlalchemy import Numeric  # add if not already imported
-
-
 class ExamResult(Base, TimestampMixin):
     __tablename__ = "exam_results"
+    __table_args__ = (
+        Index("ix_exam_results_inst_student", "institution_id", "student_id"),
+        Index("ix_exam_results_inst_class_sub", "institution_id", "class_section", "subject"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     institution_id: Mapped[uuid.UUID] = mapped_column(

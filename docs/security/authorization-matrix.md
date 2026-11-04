@@ -9,24 +9,20 @@
 
 ## 1. Executive Summary
 
-EduIntel's existing authorization system relies on a **flat, single-dimension role string** (`role = 'student' | 'teacher' | 'admin'`) stored directly on the `users` table, enforced through FastAPI's `require_role(*allowed_roles)` dependency in [`backend/app/users/dependencies.py`](file:///home/dell/projects/eduIntel/backend/app/users/dependencies.py).
+This document specifies the authorization architecture, role enforcement, and endpoint security matrix for EduIntel AI.
 
-### Critical Findings:
-1. **Total Absence of Multi-Tenancy:** Not a single endpoint or database query validates institution ownership or tenant boundaries. Every query executes across the entire shared database table.
-2. **Missing Platform Administrator Role:** There is no distinct platform-level administrative role (`platform_admin` / `super_admin`). All administrative functions are held by institute-level `admin` users, meaning any admin has full visibility and control over all global data.
-3. **Completely Unauthenticated Sensitive Endpoints:**
-   - `POST /reports/parent-report/{student_id}`: Allows anonymous users to trigger LLM parent reports and dispatch emails to arbitrary recipients.
-   - `POST /ocr/extract`: Allows anonymous image upload and CPU-heavy Tesseract OCR extraction.
-   - `GET /rag/collections`: Exposes vector collection names and counts to anonymous callers.
-4. **Severe IDOR Vulnerabilities Across Portals:**
-   - Teachers can grade or download homework submissions from *any* student in the database.
-   - Students can download study materials uploaded by teachers of *any* institute.
-   - Teachers can inspect ML risk scores, SHAP explanations, and topic diagnoses for *any* student UUID.
-   - Admins can modify profile details for any student across the database.
-5. **Privilege Escalation via Public Registration:**
-   - `POST /auth/signup` permits arbitrary self-registration with `role: "admin"`.
-6. **Frontend Demo Mode Bypass:**
-   - `localStorage.getItem("demo_mode")` allows unauthenticated navigation past React route guards.
+Following the initial audit, **Phase 2B (Security Hotfixes)** and **Phase 2 Stage 3 (Multi-Tenancy & Domain Scoping)** completely remediated all critical vulnerabilities:
+1. **Multi-Tenancy & Institutional Scoping (Remediated):** 100% of tenant-sensitive routes now enforce `require_tenant_role` and obtain transaction-bound sessions via `get_tenant_db`. All underlying database queries are scoped by `institution_id` and fenced by PostgreSQL Row-Level Security (RLS).
+2. **Unauthenticated Endpoints Hardened (Remediated):**
+   - `POST /reports/parent-report/{student_id}`: Enforces `require_role("teacher", "admin")`, timetable relational verification, and locks delivery to verified `parent_email` (SEC-03).
+   - `POST /ocr/extract`: Enforces authentication, 5 MB streaming cutoff, magic byte validation, and concurrency limits (SEC-05).
+   - `GET /rag/collections`: Secured behind authentication.
+3. **Cross-Tenant IDOR Neutralized (Remediated):**
+   - Homework submissions, study materials, exam scores, and attendance are strictly fenced to the authenticated tenant and enrolled grade/section.
+   - **SEC-S3-02:** Filenames sanitized with `os.path.basename` to prevent path traversal directory escapes.
+   - **SEC-S3-03:** Material download authorization uses institutional `tenant.role` instead of global `current_user.role`.
+4. **Privilege Escalation Blocked (Remediated):** Public signup returns `403 Forbidden` (SEC-02). Account provisioning is strictly administrative (`/admin/teachers`, `/admin/students`, `/admin/administrators`).
+5. **Fail-Closed Default (Remediated):** `ENABLE_LEGACY_SINGLE_TENANT_NAMESPACE: bool = False` ensures all unmigrated or unauthenticated tenant requests fail closed in production.
 
 ---
 

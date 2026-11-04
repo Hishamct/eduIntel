@@ -23,6 +23,10 @@ target_metadata = Base.metadata
 # access to the values within the .ini file in use.
 config = context.config
 
+# Allow environment variable override for DATABASE_URL (12-factor standard)
+if os.environ.get("DATABASE_URL"):
+    config.set_main_option("sqlalchemy.url", os.environ["DATABASE_URL"])
+
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
 if config.config_file_name is not None:

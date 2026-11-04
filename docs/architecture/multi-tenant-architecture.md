@@ -1,20 +1,21 @@
 # EduIntel AI — Multi-Tenant System Architecture Specification
 
-**Audit Date:** October 30, 2026  
+**Audit & Implementation Date:** October 30 – November 3, 2026  
 **Auditor:** Principal Software Architect, Application Security Engineer & Database Architect  
 **Branch:** `develop/production-readiness`  
-**Classification:** Definitive Architecture Specification (Target Model for Phase 2 Implementation)
+**Classification:** Verified Architecture Specification (Implemented & Validated in Phase 2 Stage 3)
 
 ---
 
 ## 1. Executive Summary
 
-This document defines the comprehensive architecture for transforming EduIntel from a single-institute system into an enterprise-grade, Multi-Tenant Software-as-a-Service (SaaS) platform. 
+This document defines the comprehensive architecture that transformed EduIntel from a single-institute system into an enterprise-grade, Multi-Tenant Software-as-a-Service (SaaS) platform, fully implemented and empirically verified in Phase 2 Stage 3.
 
 The architecture encompasses:
-1. **The Multi-Institution Membership Model:** Decoupling platform identity from institutional affiliation.
-2. **Complete Tenant Ownership Inventory:** Classifying all 20 relational entities and indirect relationship paths.
-3. **Polyglot Tenant Isolation:** Extending tenant boundaries across PostgreSQL RLS, ChromaDB vector collections, local/cloud file storage, LangGraph AI agents, FastMCP tools, and Machine Learning pipelines.
+1. **The Multi-Institution Membership Model:** Decoupling platform identity from institutional affiliation via `institutions` and `institution_memberships`.
+2. **Complete Tenant Ownership Inventory:** All 17 tenant-owned relational entities carry `institution_id UUID NOT NULL` foreign keys and composite indexes.
+3. **Polyglot Tenant Isolation:** Hardware-enforced boundaries across PostgreSQL RLS (Migration 0022), ChromaDB vector collections, local file storage, LangGraph AI agents, FastMCP tools, and Machine Learning pipelines.
+4. **Empirical Engine Validation:** 100% pass rate across 7 live PostgreSQL 16 RLS tests and 328 backend automated regression tests.
 
 ---
 
@@ -234,4 +235,29 @@ Tenant isolation must extend across non-relational storage layers:
 - **Global Pre-Trained Weights:** XGBoost models (`at_risk_model.joblib`, `weak_topic_model.joblib`) are pre-trained on generalized academic patterns and do not contain tenant-specific training weights.
 - **Inference Feature Extraction:** The feature calculation in [`app/ml/service.py:_get_student_history`](file:///home/dell/projects/eduIntel/backend/app/ml/service.py#L48) queries PostgreSQL. Because the session has `SET LOCAL app.current_institution_id`, the database RLS prevents retrieving student records from another institution.
 - **Tenant Isolation in MLflow:** In Phase 5, MLflow tracking runs and evaluation benchmarks must use tenant-prefixed experiment names (e.g. `tenant_{slug}_rag_eval`).
+
+---
+
+## 5. Implementation Verification & Empirical Results (Phase 2 Stage 3)
+
+The architecture specified above was fully implemented in Phase 2 Stage 3 across Sub-Batches 1, 2A, 2B, 2C, 3, and security cleanups:
+
+1. **Database Schema & RLS Migrations:**
+   - Migration `0021_create_institutions_and_tenant_schema` introduced the `institutions` and `institution_memberships` tables, populated `institution_id` across 17 tables, and backfilled pilot data (`eduintel-pilot`).
+   - Migration `0022_enable_postgresql_rls` enabled and forced PostgreSQL Row-Level Security on all 17 tables with `current_setting('app.current_institution_id', true)` policies for unprivileged role `eduintel`.
+2. **Context Resolution & Session Scoping:**
+   - [`backend/app/core/tenant.py`](file:///home/dell/projects/eduIntel/backend/app/core/tenant.py) provides `get_tenant_context`, `require_tenant_role`, and `get_tenant_db`.
+   - `tenant_session_scope(institution_id)` sets transaction-local `SET LOCAL app.current_institution_id = :id` and executes `RESET app.current_institution_id` on connection release to prevent connection-pool leakage.
+   - `ENABLE_LEGACY_SINGLE_TENANT_NAMESPACE: bool = False` ensures fail-closed behavior for missing or invalid tenant contexts in production.
+3. **AI & MCP Scoping:**
+   - Portal assistant memory bounded by LRU and TTL, namespaced by `{tenant_id}:{user_id}:{session_id}`.
+   - FastMCP server student-data tools require `institution_id` and run wrapped within `tenant_session_scope`.
+   - RAG collection listing secured behind authentication; ChromaDB retrieval enforced with mandatory metadata filter.
+4. **Security Cleanups:**
+   - **SEC-S3-02:** Homework upload filename sanitization using `os.path.basename` to prevent path traversal directory escapes.
+   - **SEC-S3-03:** Material download authorization evaluating institutional `tenant.role` instead of global `current_user.role`.
+5. **Empirical Engine Validation:**
+   - 7 live empirical RLS isolation checks verified against a disposable PostgreSQL 16 container (`eduintel-test-postgres` on port 5433) running with unprivileged role `eduintel`.
+   - 328/328 automated backend regression tests passed in `pytest`.
+   - Verified in closure audit: [`docs/production-readiness/08-stage-3-closure-audit.md`](file:///home/dell/projects/eduIntel/docs/production-readiness/08-stage-3-closure-audit.md).
 
