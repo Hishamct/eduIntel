@@ -67,6 +67,20 @@ async def test_engine():
     await engine.dispose()
 
 
+@pytest_asyncio.fixture(autouse=True)
+async def reset_app_engine_pool():
+    """
+    Teardown fixture that disposes pooled connections on the global application engine
+    between pytest test cases. In test suites where test cases use function-scoped event
+    loops, pooled asyncpg connections from a completed test's event loop will fail if
+    reused in a subsequent test's new loop ('got Future attached to a different loop').
+    Disposing the engine ensures each test case creates fresh connections in its active loop.
+    """
+    yield
+    from app.core.database import engine
+    await engine.dispose()
+
+
 @pytest_asyncio.fixture
 async def client(test_engine):
     """
