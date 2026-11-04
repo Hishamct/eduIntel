@@ -1,7 +1,9 @@
+import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
 from app.admin.router import router as admin_router
@@ -86,6 +88,34 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="EduIntel AI", lifespan=lifespan)
 
+
+def is_maintenance_mode() -> bool:
+    """Checks whether system-wide quiescence / maintenance mode is active."""
+    flag_path = getattr(settings, "MAINTENANCE_FLAG_PATH", "/tmp/eduintel_maintenance.flag")
+    return os.path.exists(flag_path)
+
+
+@app.middleware("http")
+async def maintenance_mode_middleware(request: Request, call_next):
+    """
+    Coordinated Deployment-Wide Quiescence Middleware (ADR-0009):
+    When maintenance flag is engaged across container replicas, immediately blocks
+    incoming mutating writes (POST, PUT, PATCH, DELETE) with HTTP 503 and Retry-After header.
+    Read requests (GET, HEAD, OPTIONS) and health probes are permitted.
+    """
+    if is_maintenance_mode():
+        if request.url.path not in ("/health", "/health/") and request.method in ("POST", "PUT", "PATCH", "DELETE"):
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "detail": "Service Unavailable: System undergoing consistent backup snapshot. Writes are paused.",
+                    "code": "MAINTENANCE_MODE_ACTIVE",
+                },
+                headers={"Retry-After": "30"},
+            )
+    return await call_next(request)
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://13.205.55.115", "https://eduintelai.in", "https://www.eduintelai.in"],
@@ -111,5 +141,8 @@ app.include_router(observability_router)
 
 @app.get("/health")
 def health_check():
-    return {"status": "ok"}
+    return {
+        "status": "ok",
+        "maintenance": is_maintenance_mode(),
+    }
 
