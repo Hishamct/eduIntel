@@ -1,8 +1,8 @@
 # ADR 0006: Production Database Infrastructure Target — AWS RDS vs. Supabase PostgreSQL
 
-- **Status**: Proposed (Scheduled for Phase 3)
+- **Status**: Accepted / Targeted for Phase 08 (Production Deployment & Pilot)
 - **Deciders**: EduIntel Engineering Team, Senior Database Architect, AWS Infrastructure Engineer
-- **Date**: 2026-10-30
+- **Date**: 2026-10-30 (Updated 2026-11-04)
 
 ---
 
@@ -38,7 +38,7 @@ We are evaluating whether to target **AWS RDS for PostgreSQL** or **Supabase Pos
 
 We propose migrating to **AWS RDS for PostgreSQL** (or **Supabase Pro Tier** as an alternative if AWS free/startup credits are exhausted).
 
-### Migration Roadmap (Phase 3):
+### Cloud Migration Roadmap (Phase 08):
 1. **Target Selection**:
    - Primary: **AWS RDS for PostgreSQL 16** (`db.t4g.small` or `db.t4g.medium` with gp3 storage in `ap-south-1` Mumbai region for low latency across Indian coaching institutes).
    - If operating on bootstrap budget without AWS credits, **Supabase Pro** ($25/mo) is the preferred alternative due to built-in PgBouncer and zero management overhead.

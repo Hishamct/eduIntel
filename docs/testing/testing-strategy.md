@@ -36,9 +36,9 @@ flowchart TD
 
 ---
 
-## 3. Current Test Inventory (328 Automated Tests)
+## 3. Current Test Inventory (334 Automated Tests)
 
-The test suite in [`backend/tests/`](file:///home/dell/projects/eduIntel/backend/tests/) contains **328 collected tests across 20 test modules**, with a **100% pass rate**:
+The test suite in [`backend/tests/`](file:///home/dell/projects/eduIntel/backend/tests/) contains **334 collected tests across 21 test modules**, with a **100% pass rate**:
 
 ### 3.1. Phase 2B Security & Containment Suites (11 Modules — 249 Tests)
 1. **`test_admin_assistant_security.py`** (17 tests): Parameter validation, regex SQL containment, extra field forbidden.
@@ -62,6 +62,9 @@ The test suite in [`backend/tests/`](file:///home/dell/projects/eduIntel/backend
 17. **`test_tenant_observability_scoping.py`**: Scoped telemetry tracking, LLM token logging, INR cost calculations, and trace log filtering by `institution_id`.
 18. **`test_tenant_agents_scoping.py`**: Portal assistant session isolation, LRU memory bounds, session TTL cleanup, and MCP server tenant scoping with `tenant_session_scope`.
 
+### 3.3. Phase 3 Database Integrity & Pooling Suite (1 Module — 6 Tests)
+19. **`test_database_pooling.py`** (6 tests): Pool settings validation (`pool_size=10, max_overflow=5, timeout=30, recycle=1800, pre_ping=True, echo=False`), native `AsyncAdaptedQueuePool` initialization on active engine, sanitized active health probe with latency monitoring, unhealthy probe exception masking, queue pool starvation & timeout handling, and pre-ping transparent socket reconnection.
+
 ---
 
 ## 4. Empirical Pytest Execution & Quality Gate Results
@@ -71,12 +74,12 @@ cd backend && pytest tests/ -v
 ```
 
 ### Verified Results:
-- **Total Tests Collected**: 328
-- **Passed**: 328 (100% PASS)
+- **Total Tests Collected**: 334
+- **Passed**: 334 (100% PASS)
 - **Failed**: 0
 - **Errors**: 0
-- **Duration**: ~73 seconds
-- **Code Quality**: `ruff check` and `ruff format --check` report 0 errors across all 23 Stage 3 scoped files.
+- **Duration**: ~50–65 seconds
+- **Code Quality**: `ruff check` and `ruff format --check` report 0 errors across all Phase 3 and Stage 3 scoped files.
 - **Frontend Security Suite**: 8/8 tests passed (`node --test`).
 
 ---

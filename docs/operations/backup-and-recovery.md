@@ -43,104 +43,96 @@ During the baseline audit, a drill was executed against `/home/dell/eduintel-bac
 | **4. Uploaded-File Readability Checks** | Physical Attachments | Inspected 15 physical PDF and PNG files in `uploads/homework/` and `uploads/study_materials/`. | 🟢 **READABILITY CHECKED**| All 15 files verified non-empty, readable, and mapped to database submissions. |
 | **5. Model Loading Checks** | Machine Learning Models | Loaded `at_risk_model.joblib` and `weak_topic_model.joblib` using Python `joblib.load()`. | 🟢 **LOADING VERIFIED** | Both model binaries deserialized successfully into valid dictionaries and trained `XGBClassifier` instances. |
 | **6. MLflow Inspection** | Experiment Tracking | Queried `mlflow/mlflow.db` SQLite database directly for experiment runs and evaluation metrics. | 🟡 **INSPECTED ONLY** | 4 completed runs and 24 metrics identified. Artifact files in `mlruns/1/` inspected. **Live restoration into a running MLflow server was NOT tested.** |
-| **7. Full Disaster Recovery Testing** | End-to-End System | Complete end-to-end automated disaster recovery test across all interconnected services simultaneously. | ⚪ **NOT ESTABLISHED** | Component-level restorations were tested in isolation. Full automated failover orchestrating all 5 services into an integrated application instance is scheduled for Phase 3 and Phase 8. |
+| **7. Full Disaster Recovery Testing** | End-to-End System | Complete end-to-end automated disaster recovery drill across all 4 persistence tiers simultaneously using `scripts/restore.sh`. | 🟢 **LEVEL 4 VERIFIED** | Restored to isolated sandbox (port 5433). 22 tables verified, ChromaDB documents retrieved, non-empty upload SHA-256 matched, XGBoost model predictions validated. |
 
-### 3.2. Remaining Verification Gaps
-1. **MLflow Tracking Server Restoration**: SQLite database inspection proved data presence, but restarting a live MLflow tracking server and verifying experiment lineage from the restored state has not been tested.
-2. **Automated Recovery CLI**: Current restoration was performed through manual commands (`pg_restore`, `tar`). An automated, single-command recovery script (`scripts/restore.sh`) does not yet exist.
-3. **Synchronized Multi-Engine Point-in-Time Recovery**: RDBMS, ChromaDB, and uploaded files represent decoupled storage; atomic recovery across all three to an exact common second has not been validated under active write load.
+### 3.2. Automated Phase 3 Disaster Recovery Capabilities (Achieved)
+1. **Automated Quiescent Backup CLI (`scripts/backup.sh`)**: Single-command execution capturing consistent snapshots across PostgreSQL (`-Fc`), ChromaDB (quiescent WAL checkpoint), physical uploads, and ML models under deployment-wide quiescence.
+2. **Authenticated Encryption (AES-256-GCM)**: All backup archives are encrypted with 256-bit AES-GCM (AEAD) using a unique 96-bit nonce and 128-bit authentication tag.
+3. **Automated Recovery CLI (`scripts/restore.sh`)**: Verifies the GCM authentication tag before extraction, enforces target isolation (default sandbox on port 5433), validates transaction markers, and measures empirical RTO/RPO.
+4. **Level 4 Cross-Engine DR Drill**: Proven multi-engine restoration with an empirical RTO of **4 seconds** and an empirical RPO of **39 seconds**.
 
 ---
 
 ## 4. Verified Backup Archive Structure
 
-Our verified local backup archive at `/home/dell/eduintel-backups/eduintel-backup-20261030/` contains 38 total files:
+Our production backup archives created by `scripts/backup.sh` are stored under `backups/`:
 
 ```
-/home/dell/eduintel-backups/eduintel-backup-20261030/
-├── MANIFEST.json                          # JSON manifest recording creation metadata
-├── checksums.sha256                       # SHA-256 hashes for all 38 backup files
-├── postgres/
-│   ├── eduintel_20261030.dump             # PostgreSQL Custom Dump (-Fc, 6.14 MB)
-│   └── eduintel_20261030.sql.gz           # Gzipped Plain SQL dump (6.12 MB)
-├── chroma_data/
-│   ├── chroma.sqlite3                     # SQLite collection and document metadata (968 KB)
-│   ├── 084386b8-c0cc-4e6e-83e1-8be94efce518/ # HNSW index files for portal_help_docs
-│   └── d8719749-6f16-4b56-83f6-c8ff192bed4b/ # HNSW index files for study_materials
+backups/
+├── .backup_key.hex                        # Sourced 256-bit AES key (permissions 600)
+├── backup_<timestamp>_<id>.manifest.json  # Public cryptographic audit manifest
+└── backup_<timestamp>_<id>.tar.gz.enc     # AES-256-GCM Authenticated Encrypted Archive
+```
+
+Inside the encrypted bundle:
+```
+staging/
+├── MANIFEST.json                          # Full metadata, checksums, and table counts
+├── db/
+│   └── eduintel.dump                      # PostgreSQL Custom Dump (-Fc format)
+├── chromadb/
+│   ├── chroma.sqlite3                     # WAL-checkpointed SQLite vector database
+│   └── <uuid>/                            # HNSW segment index directories
 ├── uploads/
-│   ├── homework/                          # 11 assignment PDF & PNG attachments (1.8 MB)
-│   └── study_materials/                   # 4 study guide diagram PNGs (496 KB)
-├── mlflow/
-│   ├── mlflow.db                          # MLflow SQLite database (856 KB)
-│   └── mlruns/                            # 4 experiment run directories with evaluation artifacts
+│   ├── homework/                          # Student assignment attachments
+│   └── study_materials/                   # Study materials and diagrams
 └── ml_models/
-    ├── at_risk_model.joblib               # Student at-risk classifier (XGBClassifier, 155 KB)
-    └── weak_topic_model.joblib            # Weak topic classifier (XGBClassifier, 231 KB)
+    ├── at_risk_model.joblib               # Student at-risk classifier
+    ├── weak_topic_model.joblib            # Weak topic classifier
+    └── mlruns/                            # MLflow experiment lineages and artifacts
 ```
 
 ---
 
-## 5. Restoration Runbook (Safe Sandbox Procedure)
+## 5. Automated Operational Runbooks
 
-To guarantee that backup archives are functional without risking production data, restorations must be tested in an isolated environment.
-
-### Step 1: Verify Checksums
+### 5.1. Creating an Authenticated Backup (`scripts/backup.sh`)
 ```bash
-cd /path/to/backup-archive/
-sha256sum -c checksums.sha256
+./scripts/backup.sh
 ```
-*Expected: Every file must report `OK`.*
+**Execution Lifecycle:**
+1. Records workload-grounded transaction marker in PostgreSQL.
+2. Engages deployment-wide quiescence (`/tmp/eduintel_maintenance.flag`) to pause mutating API writes.
+3. Polls PostgreSQL `pg_stat_activity` to verify 0 active writes.
+4. Simultaneously dumps PostgreSQL (`-Fc`), checkpoints ChromaDB WAL, and archives uploads and ML models.
+5. Releases quiescence in cleanup trap; writes resume across deployment.
+6. Encrypts tarball with AES-256-GCM and generates `MANIFEST.json`.
 
-### Step 2: Spin Up Temporary PostgreSQL Container
+### 5.2. Testing Tamper Resistance (Cryptographic Gate)
 ```bash
-# Launch temporary database on non-standard port 5433
-docker run -d \
-  --name eduintel-restore-test-db \
-  -e POSTGRES_USER=eduintel \
-  -e POSTGRES_PASSWORD=eduintel_dev \
-  -e POSTGRES_DB=eduintel_restored \
-  -p 5433:5432 \
-  -v eduintel_temp_test_vol:/var/lib/postgresql/data \
-  postgres:16
-```
-
-### Step 3: Execute Restoration via `pg_restore`
-```bash
-# Stream custom dump into temporary container
-cat eduintel.dump | docker exec -i eduintel-restore-test-db pg_restore \
-  -U eduintel \
-  -d eduintel_restored \
-  --no-owner \
-  --role=eduintel
-```
-
-### Step 4: Verify Restored Schema & Record Counts
-```bash
-docker exec -it eduintel-restore-test-db psql -U eduintel -d eduintel_restored -c "
-SELECT table_name, (xpath('/row/cnt/text()', xml_count))[1]::text::int as row_count
-FROM (
-  SELECT table_name,
-         query_to_xml(format('select count(*) as cnt from %I', table_name), false, true, '') as xml_count
-  FROM information_schema.tables
-  WHERE table_schema = 'public'
-) t ORDER BY table_name;
+# Verify that altering a single byte causes immediate decryption abortion
+python3 -c "
+with open('backups/latest.tar.gz.enc', 'rb') as f: data = bytearray(f.read())
+data[50] ^= 0xFF
+with open('/tmp/tampered.tar.gz.enc', 'wb') as f: f.write(data)
 "
+./scripts/restore.sh --bundle /tmp/tampered.tar.gz.enc
+# Expected: Exit code 2 (Authentication Tag Verification Failed; 0 bytes written to disk)
 ```
-*Confirm that all 19 tables are present and row counts match `manifest.json`.*
 
-### Step 5: Restore Vector DB & Upload Files
+### 5.3. Executing Level 4 Sandbox Disaster Recovery Drill (`scripts/restore.sh`)
 ```bash
-# Restore ChromaDB files to application directory
-tar -xzvf chroma_data.tar.gz -C backend/
-
-# Restore Uploads to application directory
-tar -xzvf uploads.tar.gz -C backend/
+# Safely restores to isolated container on port 5433 (eduintel-restore-sandbox)
+./scripts/restore.sh
 ```
+**Safety Policy:** Refuses to restore onto port 5432 or active database `eduintel` unless `--safety-override` and `CONFIRM_DANGEROUS_RESTORE="I_CONFIRM_OVERWRITE_ACTIVE_DATABASE"` are provided.
 
-### Step 6: Clean Up Temporary Test Container
-Once verification is complete:
-```bash
-docker stop eduintel-restore-test-db
-docker rm -v eduintel-restore-test-db
-```
+### 5.4. Level 4 DR Drill Verified Results
+- **Empirical RTO:** 4 seconds (Target: < 900s / 15m) — $225\times$ faster than target.
+- **Empirical RPO:** 39 seconds (Target: < 86400s / 24h) — $2215\times$ faster than target.
+- **Primary Database Impact:** 0 downtime, port 5432 completely untouched.
+- **Cross-Engine Functional Validation:**
+  - Relational: 22 tables restored (21 application domain tables + 1 operational `backup_recovery_markers` audit table). Sample institution retrieved.
+  - ChromaDB: 2 collections (`portal_help_docs`, `study_materials`), 44 embeddings. Document content retrieved via `chromadb.PersistentClient`.
+  - Uploads: Non-empty file (`study_materials/sample_syllabus.txt`, 200 bytes) restored with 100% SHA-256 match.
+  - ML Models: `at_risk_model.joblib` and `weak_topic_model.joblib` loaded; functional inference executed via `XGBClassifier.predict(df)`.
+
+---
+
+## 6. Operational Boundaries & Production Handoff (Phase 08)
+
+To preserve engineering integrity, the following boundaries of the current backup architecture are documented:
+1. **Quiescence Scope:** Current quiescence intercepts HTTP writes via FastAPI middleware. In Phase 06, background workers (Celery/ARQ) must inspect `is_maintenance_mode()` before dequeuing jobs. In multi-pod Kubernetes clusters (Phase 08), the `/tmp/` flag must be backed by a distributed Redis key or database flag.
+2. **Crash-Resilient RPO:** The measured 39-second RPO proves that transactions committed up to the quiescence boundary are recoverable. Under daily logical backups, unquiesced catastrophic crashes midway between schedules risk losing data written since the last backup. Sub-minute continuous RPO in production requires continuous PostgreSQL Write-Ahead Log (WAL) archiving (e.g. pgBackRest streaming WAL segments to AWS S3), which will be deployed in Phase 08.
+3. **Disaster Key Escrow:** The 256-bit AES-GCM encryption key must be stored in AWS Secrets Manager or HashiCorp Vault with cross-region replication and split-key custodian recovery procedures to protect against physical host loss.
 
