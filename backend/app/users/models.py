@@ -18,6 +18,9 @@ class User(Base, TimestampMixin):
         Enum("student", "teacher", "admin", name="user_role"), nullable=False
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_platform_admin: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False, index=True
+    )
 
     student_profile: Mapped["StudentProfile"] = relationship(
         back_populates="user", uselist=False

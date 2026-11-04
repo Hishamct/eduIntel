@@ -69,3 +69,19 @@ def require_role(*allowed_roles: str):
     return role_checker
 
 
+async def require_platform_admin(
+    current_user: User = Depends(get_current_user),
+) -> User:
+    """
+    Guarantees caller is a verified Platform Administrator.
+    Re-evaluates User.is_platform_admin directly against the DB-backed user row.
+    """
+    if not current_user.is_platform_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Platform administrator privileges required.",
+        )
+    return current_user
+
+
+

@@ -1,6 +1,7 @@
 import uuid
+from typing import Any
 
-from pydantic import BaseModel, ConfigDict, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr, field_validator
 
 
 class StudentProfileResponse(BaseModel):
@@ -30,11 +31,18 @@ class MeResponse(BaseModel):
 
     id: uuid.UUID
     email: EmailStr
+    name: str | None = None
     role: str
     is_active: bool
+    is_platform_admin: bool = False
     student_profile: StudentProfileResponse | None = None
     teacher_profile: TeacherProfileResponse | None = None
     admin_profile: AdminProfileResponse | None = None
+
+    @field_validator("is_platform_admin", mode="before")
+    @classmethod
+    def coerce_is_platform_admin(cls, v: Any) -> bool:
+        return bool(v) if v is not None else False
 
 
 class StudentProfileUpdate(BaseModel):

@@ -2,6 +2,7 @@ import hashlib
 import logging
 import secrets
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -48,12 +49,37 @@ async def signup_user(db: AsyncSession, data: SignupRequest) -> User:
 
 async def authenticate_user(db: AsyncSession, data: LoginRequest) -> str:
     user = await get_user_by_email(db, data.email)
-    if not user or not verify_password(data.password, user.hashed_password):
+    if not user:
         raise ValueError("Incorrect email or password")
     if not user.is_active:
-        raise ValueError("This account has been deactivated")
+        raise ValueError("This account is inactive or has not been activated")
+    if not verify_password(data.password, user.hashed_password):
+        raise ValueError("Incorrect email or password")
 
-    token = create_access_token(data={"sub": str(user.id), "role": user.role})
+    # If user is not platform admin, enforce per-institution suspension semantics
+    if not getattr(user, "is_platform_admin", False):
+        from app.institutions.models import Institution, InstitutionMembership
+
+        mem_stmt = (
+            select(InstitutionMembership, Institution)
+            .join(Institution, Institution.id == InstitutionMembership.institution_id)
+            .where(InstitutionMembership.user_id == user.id)
+        )
+        mem_results = (await db.execute(mem_stmt)).all()
+        if mem_results:
+            has_any_active_access = any(
+                m.status == "active" and inst.is_active for m, inst in mem_results
+            )
+            if not has_any_active_access:
+                raise ValueError("INSTITUTION_SUSPENDED: All associated institutions are currently suspended.")
+
+    token = create_access_token(
+        data={
+            "sub": str(user.id),
+            "role": user.role,
+            "is_platform_admin": getattr(user, "is_platform_admin", False),
+        }
+    )
     return token
 
 
@@ -115,6 +141,39 @@ def send_password_reset_email_background(raw_token: str, recipient_email: str) -
     )
 
 
+def send_institution_admin_invitation_email(
+    raw_token: str, recipient_email: str, recipient_name: str, institution_name: str
+) -> dict[str, Any]:
+    """
+    Dispatches onboarding activation email to the initial institution administrator.
+    Raw token and activation URLs are excluded from standard logging.
+    Returns delivery status:
+    - {'status': 'sent'}: Successfully dispatched via SMTP
+    - {'status': 'unconfigured'}: SMTP host is unconfigured or disabled
+    - {'status': 'failed', 'detail': ...}: SMTP transmission failed
+    """
+    if not settings.SMTP_HOST or settings.SMTP_HOST.strip().lower() in ("none", "disabled", ""):
+        return {"status": "unconfigured", "detail": "SMTP host is not configured."}
+
+    activation_url = f"{settings.FRONTEND_BASE_URL}/reset-password?token={raw_token}"
+    body = (
+        f"Hello {recipient_name},\n\n"
+        f"You have been designated as the initial administrator for {institution_name} on EduIntel AI.\n\n"
+        f"Please click the link below to activate your account and choose your password:\n"
+        f"{activation_url}\n\n"
+        f"This invitation link expires in 48 hours and can only be used once.\n"
+        f"If you were not expecting this invitation, please contact your platform administrator."
+    )
+    result = send_email_direct(
+        to_email=recipient_email,
+        subject=f"EduIntel — Invitation to Administer {institution_name}",
+        body=body,
+    )
+    if result.get("status") == "error":
+        return {"status": "failed", "detail": result.get("detail", "SMTP error")}
+    return {"status": "sent"}
+
+
 async def confirm_password_reset(
     db: AsyncSession, token: str, new_password: str
 ) -> None:
@@ -137,5 +196,6 @@ async def confirm_password_reset(
         raise ValueError("User not found")
 
     user.hashed_password = hash_password(new_password)
+    user.is_active = True
     reset_token.used = True
     await db.commit()
