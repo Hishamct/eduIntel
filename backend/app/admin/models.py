@@ -1,7 +1,7 @@
 import datetime
 import uuid
 
-from sqlalchemy import Date, Enum, ForeignKey, Integer, Numeric, String, UniqueConstraint
+from sqlalchemy import Date, Enum, ForeignKey, Index, Integer, Numeric, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -80,6 +80,10 @@ class SalaryRecord(Base, TimestampMixin):
 
 class FeeRecord(Base, TimestampMixin):
     __tablename__ = "fee_records"
+    __table_args__ = (
+        Index("ix_fee_records_inst_student", "institution_id", "student_id"),
+        Index("ix_fee_records_inst_status", "institution_id", "payment_status"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     institution_id: Mapped[uuid.UUID] = mapped_column(
@@ -105,6 +109,9 @@ class FeeRecord(Base, TimestampMixin):
 
 class Attendance(Base, TimestampMixin):
     __tablename__ = "attendance_records"
+    __table_args__ = (
+        Index("ix_attendance_inst_class_date", "institution_id", "class_section", "date"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     institution_id: Mapped[uuid.UUID] = mapped_column(
