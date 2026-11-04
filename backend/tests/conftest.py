@@ -26,6 +26,7 @@ Setup:
 import os
 import uuid
 
+import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -39,7 +40,7 @@ from app.users.models import AdminProfile, StudentProfile, TeacherProfile, User
 
 TEST_DATABASE_URL = os.environ.get(
     "TEST_DATABASE_URL",
-    "postgresql+asyncpg://eduintel:eduintel@localhost:5432/eduintel_test",
+    "postgresql+asyncpg://eduintel:eduintel_dev@localhost:5432/eduintel_test",
 )
 
 
@@ -65,6 +66,19 @@ async def test_engine():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
     await engine.dispose()
+
+
+@pytest.fixture(autouse=True)
+def prevent_live_smtp_during_tests(monkeypatch):
+    """
+    Globally intercepts all SMTP calls so tests never connect to live Gmail SMTP servers
+    or dispatch real emails.
+    """
+    from unittest.mock import MagicMock
+    mock_send = MagicMock(return_value={"status": "sent"})
+    monkeypatch.setattr("app.auth.service.send_email_direct", mock_send)
+    monkeypatch.setattr("app.reports.parent_report_agent.send_email_direct", mock_send)
+    yield mock_send
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -121,27 +135,52 @@ async def _provision_user(test_engine, role: str) -> str:
 
     TestSessionLocal = async_sessionmaker(test_engine, expire_on_commit=False)
     async with TestSessionLocal() as session:
+        from sqlalchemy import select
+
+        from app.institutions.models import Institution, InstitutionMembership
+        inst = (await session.execute(select(Institution))).scalars().first()
+        if not inst:
+            inst = Institution(
+                id=uuid.UUID("00000000-0000-0000-0000-000000000001"),
+                name="Default Test Institution",
+                slug="test-inst",
+                is_active=True,
+            )
+            session.add(inst)
+            await session.flush()
+
         user = User(
             email=email,
             name=f"Test {role.capitalize()}",
             hashed_password=hash_password(password),
             role=role,
             is_active=True,
+            is_platform_admin=False,
         )
         session.add(user)
         await session.flush()
 
+        session.add(
+            InstitutionMembership(
+                id=uuid.uuid4(),
+                institution_id=inst.id,
+                user_id=user.id,
+                role=role,
+                status="active",
+            )
+        )
+
         if role == "student":
-            session.add(StudentProfile(user_id=user.id, grade="10", section="A"))
+            session.add(StudentProfile(institution_id=inst.id, user_id=user.id, grade="10", section="A"))
         elif role == "teacher":
             session.add(
                 TeacherProfile(
-                    user_id=user.id, department="Science", subjects="Physics"
+                    institution_id=inst.id, user_id=user.id, department="Science", subjects="Physics"
                 )
             )
         elif role == "admin":
             session.add(
-                AdminProfile(user_id=user.id, designation="Test Administrator")
+                AdminProfile(institution_id=inst.id, user_id=user.id, designation="Test Administrator")
             )
 
         await session.commit()

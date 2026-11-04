@@ -10,5 +10,6 @@ export async function logout(navigate) {
   localStorage.removeItem("demo_mode");
   sessionStorage.removeItem("is_authenticated");
   sessionStorage.removeItem("user_role");
+  sessionStorage.removeItem("is_platform_admin");
   navigate("/login", { replace: true });
 }

@@ -20,13 +20,13 @@ This document specifies the migration architecture, revision history, and schema
       await connectable.dispose()
   ```
 - **Tracking Table**: Current migration state is tracked in the `alembic_version` table in PostgreSQL.
-- **Current Head Revision**: `a7c8e9d0b1f2` (`0023_a7c8e9d0b1f2_add_multi_tenant_composite_indexes.py`).
+- **Current Head Revision**: `c9e0f2a1b3c4` (`0025_c9e0f2a1b3c4_split_rls_policies_for_read_write_isolation.py`).
 
 ---
 
-## 2. Migration Revision History (23 Revisions)
+## 2. Migration Revision History (25 Revisions)
 
-Below is the chronological sequence of migrations shaping the current database schema, organized with standardized 4-digit sequential numeric prefixes (`0001_` through `0023_`):
+Below is the chronological sequence of migrations shaping the current database schema, organized with standardized 4-digit sequential numeric prefixes (`0001_` through `0025_`):
 
 | Step | Revision ID | Down Revision | Script Name | Core DDL Operations |
 |:---:|---|---|---|---|
@@ -52,7 +52,9 @@ Below is the chronological sequence of migrations shaping the current database s
 | **20**| `d4f6a2b5e0c7` | `c3e5f1a4d9b6` | `0020_d4f6a2b5e0c7_add_agent_trace_logs_table.py` | Creates `agent_trace_logs` for LangGraph node execution telemetry. |
 | **21**| `e5a7b9c1d3f5` | `d4f6a2b5e0c7` | `0021_e5a7b9c1d3f5_create_institutions_and_tenant_schema.py` | Creates `institutions`, `institution_memberships`, adds `institution_id` FKs and composite indexes to all 17 tenant tables, seeds & backfills pilot institution. |
 | **22**| `f6b8c0d2e4a6` | `e5a7b9c1d3f5` | `0022_f6b8c0d2e4a6_enable_postgresql_rls.py` | Enables and forces PostgreSQL Row-Level Security (RLS) on all 17 tenant-owned tables with `app.current_institution_id` session policies for unprivileged role `eduintel`. |
-| **23**| `a7c8e9d0b1f2` | `f6b8c0d2e4a6` | `0023_a7c8e9d0b1f2_add_multi_tenant_composite_indexes.py` | **(HEAD)** Creates 7 composite multi-tenant B-tree indexes across `attendance_records`, `homework_submissions`, `exam_results`, and `fee_records` with `institution_id` leftmost prefix. |
+| **23**| `a7c8e9d0b1f2` | `f6b8c0d2e4a6` | `0023_a7c8e9d0b1f2_add_multi_tenant_composite_indexes.py` | Creates 7 composite multi-tenant B-tree indexes across `attendance_records`, `homework_submissions`, `exam_results`, and `fee_records` with `institution_id` leftmost prefix. |
+| **24**| `b8d9f0e1c2a3` | `a7c8e9d0b1f2` | `0024_b8d9f0e1c2a3_add_platform_admin_and_institution_contact.py` | Adds `is_platform_admin` column to `users` with B-tree index, adds `contact_email` to `institutions`, and reconfigures `tenant_isolation_policy` to support platform admin read access. |
+| **25**| `c9e0f2a1b3c4` | `b8d9f0e1c2a3` | `0025_c9e0f2a1b3c4_split_rls_policies_for_read_write_isolation.py` | **(HEAD)** Replaces `tenant_isolation_policy` across all 17 tables with command-specific policies (`FOR SELECT` with platform admin read bypass vs `FOR INSERT`, `FOR UPDATE`, `FOR DELETE` strictly locked to `app.current_institution_id`), permanently blocking cross-tenant deletes. |
 
 ---
 

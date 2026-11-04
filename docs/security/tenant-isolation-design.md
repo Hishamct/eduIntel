@@ -71,88 +71,113 @@ class TenantContext:
 ```
 
 ### 4.2. Step 2: Session Initialization with `SET LOCAL`
-A dedicated FastAPI database dependency initializes the transaction with the tenant setting:
+FastAPI database dependencies initialize the transaction with the appropriate tenant or administrative setting:
 
 ```python
+# Tenant session dependency for institutional endpoints:
 async def get_tenant_db(
-    tenant: TenantContext = Depends(get_current_tenant),
+    tenant: TenantContext = Depends(get_tenant_context),
+    session: AsyncSession = Depends(get_db),
 ) -> AsyncGenerator[AsyncSession, None]:
-    async with AsyncSessionLocal() as session:
-        async with session.begin():  # Explicit transaction block
-            # Set the tenant ID for this transaction only
-            await session.execute(
-                text("SET LOCAL app.current_institution_id = :tenant_id"),
-                {"tenant_id": str(tenant.institution_id)},
-            )
-            if tenant.is_platform_admin:
-                await session.execute(text("SET LOCAL app.is_platform_admin = 'true'"))
-            else:
-                await session.execute(text("SET LOCAL app.is_platform_admin = 'false'"))
-            
-            yield session
-        # Transaction committed or rolled back; SET LOCAL cleared automatically
+    await session.execute(
+        text("SELECT set_config('app.current_institution_id', :id, true)"),
+        {"id": str(tenant.institution_id)},
+    )
+    yield session
+
+# Privileged session dependency for Platform Admin cross-tenant endpoints:
+async def get_platform_admin_db(
+    session: AsyncSession = Depends(get_db),
+    admin: User = Depends(require_platform_admin),
+) -> AsyncGenerator[AsyncSession, None]:
+    await session.execute(text("SELECT set_config('app.is_platform_admin', 'true', true)"))
+    yield session
 ```
+
+In both cases, `set_config(..., is_local=true)` ensures the setting reverts when the transaction ends, and session teardown executes `RESET app.current_institution_id` / `RESET app.is_platform_admin` upon release to the pool.
 
 ---
 
-## 5. PostgreSQL Row-Level Security Policies Specification
+## 5. PostgreSQL Row-Level Security Policies Specification (Migration 0025)
 
 ### 5.1. Enabling RLS on Tenant Tables
-RLS must be enabled on all 17 tenant-owned tables:
+RLS is enabled and forced on all 17 tenant-owned application tables:
 ```sql
-ALTER TABLE users ENABLE ROW LEVEL SECURITY;
-ALTER TABLE assignments ENABLE ROW LEVEL SECURITY;
-ALTER TABLE homework_submissions ENABLE ROW LEVEL SECURITY;
-ALTER TABLE doubt_threads ENABLE ROW LEVEL SECURITY;
-ALTER TABLE doubt_messages ENABLE ROW LEVEL SECURITY;
-ALTER TABLE study_materials ENABLE ROW LEVEL SECURITY;
-ALTER TABLE exam_results ENABLE ROW LEVEL SECURITY;
-ALTER TABLE timetable_entries ENABLE ROW LEVEL SECURITY;
-ALTER TABLE salary_records ENABLE ROW LEVEL SECURITY;
-ALTER TABLE fee_records ENABLE ROW LEVEL SECURITY;
-ALTER TABLE attendance_records ENABLE ROW LEVEL SECURITY;
-ALTER TABLE announcements ENABLE ROW LEVEL SECURITY;
-ALTER TABLE audit_logs ENABLE ROW LEVEL SECURITY;
-ALTER TABLE agent_trace_logs ENABLE ROW LEVEL SECURITY;
-ALTER TABLE student_profiles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE teacher_profiles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE admin_profiles ENABLE ROW LEVEL SECURITY;
+-- 17 Tenant Application Tables:
+ALTER TABLE student_profiles ENABLE ROW LEVEL SECURITY; FORCE ROW LEVEL SECURITY;
+ALTER TABLE teacher_profiles ENABLE ROW LEVEL SECURITY; FORCE ROW LEVEL SECURITY;
+ALTER TABLE admin_profiles ENABLE ROW LEVEL SECURITY; FORCE ROW LEVEL SECURITY;
+ALTER TABLE assignments ENABLE ROW LEVEL SECURITY; FORCE ROW LEVEL SECURITY;
+ALTER TABLE study_materials ENABLE ROW LEVEL SECURITY; FORCE ROW LEVEL SECURITY;
+ALTER TABLE exam_results ENABLE ROW LEVEL SECURITY; FORCE ROW LEVEL SECURITY;
+ALTER TABLE homework_submissions ENABLE ROW LEVEL SECURITY; FORCE ROW LEVEL SECURITY;
+ALTER TABLE doubt_threads ENABLE ROW LEVEL SECURITY; FORCE ROW LEVEL SECURITY;
+ALTER TABLE doubt_messages ENABLE ROW LEVEL SECURITY; FORCE ROW LEVEL SECURITY;
+ALTER TABLE timetable_entries ENABLE ROW LEVEL SECURITY; FORCE ROW LEVEL SECURITY;
+ALTER TABLE salary_records ENABLE ROW LEVEL SECURITY; FORCE ROW LEVEL SECURITY;
+ALTER TABLE fee_records ENABLE ROW LEVEL SECURITY; FORCE ROW LEVEL SECURITY;
+ALTER TABLE attendance_records ENABLE ROW LEVEL SECURITY; FORCE ROW LEVEL SECURITY;
+ALTER TABLE announcements ENABLE ROW LEVEL SECURITY; FORCE ROW LEVEL SECURITY;
+ALTER TABLE audit_logs ENABLE ROW LEVEL SECURITY; FORCE ROW LEVEL SECURITY;
+ALTER TABLE llm_usage_logs ENABLE ROW LEVEL SECURITY; FORCE ROW LEVEL SECURITY;
+ALTER TABLE agent_trace_logs ENABLE ROW LEVEL SECURITY; FORCE ROW LEVEL SECURITY;
 ```
 
-### 5.2. Standard Tenant Isolation Policy Template
+### 5.2. Standard Tenant Isolation Policy Template (Migration 0025 — SEC-03)
+Following the independent security audit (SEC-03), policies are separated into command-specific RESTRICTIVE rules. The Platform Admin bypass (`app.is_platform_admin = 'true'`) is present **strictly** in `FOR SELECT`. Cross-tenant writes (`INSERT`, `UPDATE`, `DELETE`) are blocked:
+
 ```sql
--- Read Policy
-CREATE POLICY tenant_isolation_select_policy ON assignments
+-- Baseline access policy for unprivileged application user:
+CREATE POLICY tenant_app_access_policy ON {table}
+AS PERMISSIVE
+FOR ALL
+TO eduintel
+USING (true)
+WITH CHECK (true);
+
+-- 1. Read Policy: Platform Admins can read across institutions; tenant users strictly filtered
+CREATE POLICY tenant_isolation_read_policy ON {table}
+AS RESTRICTIVE
 FOR SELECT
+TO PUBLIC
 USING (
-    institution_id = NULLIF(current_setting('app.current_institution_id', true), '')::uuid
-    OR current_setting('app.is_platform_admin', true) = 'true'
+    current_setting('app.is_platform_admin', true) = 'true'
+    OR institution_id = NULLIF(current_setting('app.current_institution_id', true), '')::uuid
 );
 
--- Write Policies (INSERT, UPDATE, DELETE)
-CREATE POLICY tenant_isolation_insert_policy ON assignments
+-- 2. Insert Policy: All roles must insert rows matching app.current_institution_id
+CREATE POLICY tenant_isolation_insert_policy ON {table}
+AS RESTRICTIVE
 FOR INSERT
+TO PUBLIC
 WITH CHECK (
     institution_id = NULLIF(current_setting('app.current_institution_id', true), '')::uuid
 );
 
-CREATE POLICY tenant_isolation_update_policy ON assignments
+-- 3. Update Policy: All roles must target rows matching app.current_institution_id
+CREATE POLICY tenant_isolation_update_policy ON {table}
+AS RESTRICTIVE
 FOR UPDATE
+TO PUBLIC
 USING (
     institution_id = NULLIF(current_setting('app.current_institution_id', true), '')::uuid
-    OR current_setting('app.is_platform_admin', true) = 'true'
 )
 WITH CHECK (
     institution_id = NULLIF(current_setting('app.current_institution_id', true), '')::uuid
 );
 
-CREATE POLICY tenant_isolation_delete_policy ON assignments
+-- 4. Delete Policy (SEC-03): Cross-tenant deletion forbidden; strictly requires tenant context
+CREATE POLICY tenant_isolation_delete_policy ON {table}
+AS RESTRICTIVE
 FOR DELETE
+TO PUBLIC
 USING (
     institution_id = NULLIF(current_setting('app.current_institution_id', true), '')::uuid
-    OR current_setting('app.is_platform_admin', true) = 'true'
 );
 ```
+
+> [!IMPORTANT]
+> **SEC-03 Rationale**: In PostgreSQL, a unified `FOR ALL` policy applies its `USING` clause to `DELETE` queries. Placing `app.is_platform_admin = 'true'` in `USING` of a `FOR ALL` policy inadvertently allowed cross-tenant record deletion. Separating policies into discrete `FOR SELECT`, `FOR INSERT`, `FOR UPDATE`, and `FOR DELETE` rules guarantees that Platform Admin cross-tenant privileges are strictly read-only at the database engine level.
 
 ### 5.3. Superuser & Migration Bypass
 To allow Alembic migrations and database backup tools (`pg_dump`) to operate globally, migrations execute as the PostgreSQL superuser (`eduintel`) or a dedicated migration role with `BYPASSRLS` attribute:

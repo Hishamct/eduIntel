@@ -16,17 +16,37 @@ function Login() {
     setError("");
     setIsLoggingIn(true);
 
+    // SEC-02: Atomically reset any stale session state before initiating authentication
+    sessionStorage.removeItem("is_authenticated");
+    sessionStorage.removeItem("user_role");
+    sessionStorage.removeItem("is_platform_admin");
+    localStorage.removeItem("access_token");
+
     try {
       await apiClient.post("/auth/login", { email, password });
       // Token is stored exclusively in HttpOnly cookie; do not store JWT in localStorage
-      sessionStorage.setItem("is_authenticated", "true");
 
       const meResponse = await apiClient.get("/users/me");
       const role = meResponse.data.role;
-      sessionStorage.setItem("user_role", role);
+      const isPlatformAdmin = meResponse.data.is_platform_admin === true;
 
-      navigate(`/${role}/dashboard`);
+      // SEC-02: Write authenticated session state ONLY after both calls succeed
+      sessionStorage.setItem("is_authenticated", "true");
+      sessionStorage.setItem("user_role", role);
+      sessionStorage.setItem("is_platform_admin", isPlatformAdmin ? "true" : "false");
+
+      if (isPlatformAdmin) {
+        navigate("/platform-admin/dashboard");
+      } else {
+        navigate(`/${role}/dashboard`);
+      }
     } catch (err) {
+      // SEC-02: Clear session state on any login-flow error (e.g. credentials error or /users/me failure)
+      sessionStorage.removeItem("is_authenticated");
+      sessionStorage.removeItem("user_role");
+      sessionStorage.removeItem("is_platform_admin");
+      localStorage.removeItem("access_token");
+
       const detail = err.response?.data?.detail || "Login failed. Please check your credentials.";
       setError(detail);
     } finally {

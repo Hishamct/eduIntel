@@ -1,6 +1,6 @@
 # EduIntel AI — Feature Status Matrix
 
-This matrix provides an exhaustive, source-verified audit of all capabilities across EduIntel AI's **16 backend modules** and **21 frontend views** on branch `develop/production-readiness`.
+This matrix provides an exhaustive, source-verified audit of all capabilities across EduIntel AI's **17 backend modules** and **23 frontend views** on branch `develop/production-readiness`.
 
 ---
 
@@ -15,7 +15,7 @@ This matrix provides an exhaustive, source-verified audit of all capabilities ac
 
 ---
 
-## 1. Backend Modules Matrix (16 Modules)
+## 1. Backend Modules Matrix (17 Modules)
 
 ### Shared Tier
 
@@ -25,12 +25,13 @@ This matrix provides an exhaustive, source-verified audit of all capabilities ac
 | **`core`** | Global Application Settings | 🟢 Implemented | [`backend/app/core/config.py`](file:///home/dell/projects/eduIntel/backend/app/core/config.py) | Pydantic `BaseSettings` reading environment variables. |
 | **`core`** | Base Timestamp Models & Mixins | 🟢 Implemented | [`backend/app/core/models.py`](file:///home/dell/projects/eduIntel/backend/app/core/models.py) | Provides `id`, `created_at`, `updated_at`. |
 | **`core`** | Unified LLM Client with Fallback | 🟢 Implemented | [`backend/app/core/llm_client.py`](file:///home/dell/projects/eduIntel/backend/app/core/llm_client.py) | Primary Gemini (`gemini-3.6-flash`), fallback Groq (`openai/gpt-oss-120b`). |
-| **`auth`** | User Registration (`/api/auth/signup`) | 🟢 Implemented | [`backend/app/auth/router.py`](file:///home/dell/projects/eduIntel/backend/app/auth/router.py) | Validates unique email, hashes password with passlib/bcrypt. |
-| **`auth`** | User Login & JWT Issuance (`/api/auth/login`) | 🟢 Implemented | [`backend/app/auth/router.py`](file:///home/dell/projects/eduIntel/backend/app/auth/router.py) | Issues signed HS256 JWT access token. |
-| **`auth`** | Password Reset Token Lifecycle | 🟢 Implemented | [`backend/app/auth/router.py`](file:///home/dell/projects/eduIntel/backend/app/auth/router.py) | Tokens stored in `password_reset_tokens` table with expiry. |
+| **`auth`** | User Registration (`/api/auth/signup`) | 🟢 Implemented | [`backend/app/auth/router.py`](file:///home/dell/projects/eduIntel/backend/app/auth/router.py) | Validates unique email, hashes password with passlib/bcrypt; public signup disabled (SEC-02). |
+| **`auth`** | User Login & JWT Issuance (`/api/auth/login`) | 🟢 Implemented | [`backend/app/auth/router.py`](file:///home/dell/projects/eduIntel/backend/app/auth/router.py) | Issues signed HS256 JWT access token and HttpOnly cookie (SEC-10). |
+| **`auth`** | Password Reset Token Lifecycle | 🟢 Implemented | [`backend/app/auth/router.py`](file:///home/dell/projects/eduIntel/backend/app/auth/router.py) | Tokens stored in `password_reset_tokens` table with SHA-256 hash and expiry. |
 | **`auth`** | Role-Based Access Control & Security | 🟢 Implemented | [`backend/app/auth/security.py`](file:///home/dell/projects/eduIntel/backend/app/auth/security.py) | JWT token creation/decoding, password hashing, and role checks. |
 | **`users`** | Current User Profile Retrieval (`/api/users/me`) | 🟢 Implemented | [`backend/app/users/router.py`](file:///home/dell/projects/eduIntel/backend/app/users/router.py) | Returns authenticated user details and profile info. |
 | **`users`** | Student/Teacher/Admin Profile Updates | 🟢 Implemented | [`backend/app/users/router.py`](file:///home/dell/projects/eduIntel/backend/app/users/router.py) | Updates contact information, phone, grade/subject metadata. |
+| **`institutions`** | Multi-Tenant Management & Onboarding | 🟢 Implemented | [`backend/app/institutions/router.py`](file:///home/dell/projects/eduIntel/backend/app/institutions/router.py) | Atomic onboarding, validated `EmailStr` (SEC-01), accurate invitation status (SEC-04), 48h activation tokens, status suspend/reactivate. |
 
 ### Portal Tier
 
@@ -135,13 +136,20 @@ This matrix provides an exhaustive, source-verified audit of all capabilities ac
 | `/admin/timetable` | `TimetableView.jsx` | `admin` | 🟢 Implemented | [`frontend/src/pages/admin/TimetableView.jsx`](file:///home/dell/projects/eduIntel/frontend/src/pages/admin/TimetableView.jsx) | Weekly class schedule matrix, teacher room assignments, and conflict checks. |
 | `/admin/salary` | `SalaryManagement.jsx` | `admin` | 🟢 Implemented | [`frontend/src/pages/admin/SalaryManagement.jsx`](file:///home/dell/projects/eduIntel/frontend/src/pages/admin/SalaryManagement.jsx) | Teacher payroll records, base pay, bonuses, and disbursement statuses. |
 
+### Platform Admin Portal
+
+| Route | Page Component | Role Required | Status | Source Location | Description & Capabilities |
+|---|---|:---:|:---:|---|---|
+| `/platform-admin/dashboard` | `PlatformAdminDashboard.jsx` | `platform_admin` | 🟢 Implemented | [`frontend/src/pages/platform-admin/PlatformAdminDashboard.jsx`](file:///home/dell/projects/eduIntel/frontend/src/pages/platform-admin/PlatformAdminDashboard.jsx) | Global multi-institution metrics, aggregate active user stats, active vs suspended summaries. |
+| `/platform-admin/institutions` | `PlatformAdminInstitutions.jsx` | `platform_admin` | 🟢 Implemented | [`frontend/src/pages/platform-admin/PlatformAdminInstitutions.jsx`](file:///home/dell/projects/eduIntel/frontend/src/pages/platform-admin/PlatformAdminInstitutions.jsx) | Institution roster, search, status toggles, atomic onboarding modal with email validation and secure one-time activation token display. |
+
 ---
 
 ## 3. High-Priority Gaps & Remediation Schedule
 
 | Component | Identified Limitation | Operational Impact | Scheduled Remediation |
 |---|---|---|:---:|
-| **Multi-Tenancy** | Schema lacks `institution_id` foreign key isolation. | All records belong to a single institution; cross-tenant leakage if shared. | **Phase 2** (RBAC & Multi-Tenancy) |
+| **Multi-Tenancy** | Schema lacks `institution_id` foreign key isolation. | All records belong to a single institution; cross-tenant leakage if shared. | 🟢 **Remediated** (Phase 2 Stages 1–5 & SEC-01–05) |
 | **Async Queues** | SMTP email dispatch, OCR extraction, and ChromaDB vector embeddings run synchronously in the HTTP request. | Slow request latency (2–8 seconds) during PDF uploads and email dispatch. | **Phase 6** (Background Tasks & Resilience) |
 | **Duplicate Models** | `User` SQLAlchemy model is declared in both `auth.models` and `users.models`. | Architectural duplication; potential Alembic drift if not unified. | **Phase 3** (Database Optimization) |
 | **Missing DB Enums** | Alembic migration references custom enum types, but models fall back to string representations in certain tables. | Schema inconsistency between clean migration and fallback DDL. | **Phase 3** (Database Optimization) |

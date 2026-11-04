@@ -55,7 +55,10 @@ async def login(
         )
         return TokenResponse(access_token=token)
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e)) from e
+        detail_msg = str(e)
+        if "INSTITUTION_SUSPENDED" in detail_msg:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=detail_msg) from e
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=detail_msg) from e
 
 
 @router.post("/logout", status_code=status.HTTP_200_OK)

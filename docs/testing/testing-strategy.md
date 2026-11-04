@@ -36,9 +36,9 @@ flowchart TD
 
 ---
 
-## 3. Current Test Inventory (334 Automated Tests)
+## 3. Current Backend Test Inventory (530 Automated Tests)
 
-The test suite in [`backend/tests/`](file:///home/dell/projects/eduIntel/backend/tests/) contains **334 collected tests across 21 test modules**, with a **100% pass rate**:
+The test suite in [`backend/tests/`](file:///home/dell/projects/eduIntel/backend/tests/) contains **530 collected tests across 22 test modules**, with a **100% pass rate**:
 
 ### 3.1. Phase 2B Security & Containment Suites (11 Modules — 249 Tests)
 1. **`test_admin_assistant_security.py`** (17 tests): Parameter validation, regex SQL containment, extra field forbidden.
@@ -62,32 +62,72 @@ The test suite in [`backend/tests/`](file:///home/dell/projects/eduIntel/backend
 17. **`test_tenant_observability_scoping.py`**: Scoped telemetry tracking, LLM token logging, INR cost calculations, and trace log filtering by `institution_id`.
 18. **`test_tenant_agents_scoping.py`**: Portal assistant session isolation, LRU memory bounds, session TTL cleanup, and MCP server tenant scoping with `tenant_session_scope`.
 
-### 3.3. Phase 3 Database Integrity & Pooling Suite (1 Module — 6 Tests)
-19. **`test_database_pooling.py`** (6 tests): Pool settings validation (`pool_size=10, max_overflow=5, timeout=30, recycle=1800, pre_ping=True, echo=False`), native `AsyncAdaptedQueuePool` initialization on active engine, sanitized active health probe with latency monitoring, unhealthy probe exception masking, queue pool starvation & timeout handling, and pre-ping transparent socket reconnection.
+### 3.3. Phase 2 Stages 4 & 5 Platform Admin & Remediation Suite (1 Module — 20 Tests)
+19. **`test_platform_admin.py`** (20 tests):
+    - **Authorization & Dependency Checks**: `require_platform_admin` verifies database `is_platform_admin` column; rejects forged JWT claims, unauthenticated users, and institutional admins with 403.
+    - **Atomic Institution Onboarding**: 100% rollback on duplicate slug or email; verifies initial admin account is inactive (`is_active=False`) with random password lockout; verifies 48-hour single-use SHA-256 hashed activation token.
+    - **Email Format Validation (SEC-01)**: Verifies Pydantic `EmailStr` rejects malformed `admin_email` and `contact_email` with HTTP 422.
+    - **Accurate Invitation Status (SEC-04)**: Verifies `invitation_sent` accurately distinguishes configured SMTP delivery vs unconfigured fallback.
+    - **Operational Suspension**: Verifies `PATCH /institutions/{id}/status` suspends institutions, blocking single-tenant members while preserving multi-tenant users' access to other active institutes.
+    - **Database RLS Read-Write Isolation (SEC-03)**: Verifies Platform Admin cross-tenant `SELECT` queries succeed with `app.is_platform_admin = 'true'`, while cross-tenant `INSERT`, `UPDATE`, and `DELETE` queries are denied by PostgreSQL with SQLSTATE `42501` (`insufficient_privilege`).
+
+### 3.4. Database Integrity & Core Authentication Suites (3 Modules — 182 Tests)
+20. **`test_database_pooling.py`** (6 tests): Pool settings validation (`pool_size=10, max_overflow=5, timeout=30, recycle=1800, pre_ping=True, echo=False`), queue pool starvation handling, and connection reset verification.
+21. **`test_auth_rbac.py`**: End-to-end authentication, password hashing, role transitions, and profile resolution.
+22. **`test_observability.py`**: Metrics endpoints, cost aggregation, and trace instrumentation.
 
 ---
 
 ## 4. Empirical Pytest Execution & Quality Gate Results
 
 ```bash
+set -a && source backend/.env && set +a
 cd backend && pytest tests/ -v
 ```
 
 ### Verified Results:
-- **Total Tests Collected**: 334
-- **Passed**: 334 (100% PASS)
+- **Total Tests Collected**: 530
+- **Passed**: 530 (100% PASS)
 - **Failed**: 0
 - **Errors**: 0
-- **Duration**: ~50–65 seconds
-- **Code Quality**: `ruff check` and `ruff format --check` report 0 errors across all Phase 3 and Stage 3 scoped files.
-- **Frontend Security Suite**: 8/8 tests passed (`node --test`).
+- **Duration**: ~97 seconds
+- **Code Quality**: `ruff check` reports 0 errors across all backend source and test files.
 
 ---
 
-## 4. Test Execution Instructions & Test Database Isolation
+## 5. Frontend Testing Architecture & Suites (Vitest & RTL)
 
-### 4.1. Test Database Requirement
-Tests that require database transactions (`test_auth_rbac.py`, `test_observability.py`) instantiate an async test engine using `TEST_DATABASE_URL`:
+Following the security audit remediation (SEC-05), a dedicated frontend test framework was established:
+- **Test Runner**: Vitest v4.1.12 with `jsdom` environment ([`frontend/vitest.config.js`](file:///home/dell/projects/eduIntel/frontend/vitest.config.js)).
+- **Testing Utilities**: React Testing Library (`@testing-library/react`), `@testing-library/jest-dom`.
+- **Command**: `cd frontend && npm test`
+
+### 5.1. Vitest Test Suites (3 Modules — 12 Tests)
+1. **`tests/protected_route.test.jsx`** (4 tests):
+   - Redirects unauthenticated users to `/login`.
+   - Allows authenticated users with matching roles to access protected components.
+   - Redirects users with mismatched roles to their designated home routes.
+   - Restricts Platform Admin routes (`/platform-admin/*`) exclusively to sessions where `sessionStorage.is_platform_admin === "true"`, redirecting ordinary institutional admins to `/admin/dashboard`.
+2. **`tests/login_flow.test.jsx`** (4 tests):
+   - Verifies atomic session storage cleanup on submission start.
+   - Validates that `sessionStorage.is_authenticated`, `user_role`, and `is_platform_admin` are set atomically only after both `/auth/login` and `/users/me` succeed.
+   - Clears all session keys on `/users/me` failure, 401 error, or inactive account status.
+   - Enforces correct post-login routing: Platform Admins $\rightarrow$ `/platform-admin/dashboard`; institutional users $\rightarrow$ role home route.
+3. **`tests/institution_management.test.jsx`** (4 tests):
+   - Verifies input validation on the institution onboarding modal (name, slug, email format).
+   - Verifies single-use activation token presentation dialog and copy-to-clipboard behavior without storing raw tokens in `localStorage` or `sessionStorage`.
+   - Verifies confirmation modals for institution suspension and reactivation.
+
+### 5.2. Node.js Security Test Suite (1 Module — 8 Tests)
+- **`frontend/tests/test_sec11_demo_mode_remediation.js`**: Native Node.js test runner (`node --test`).
+- Verifies complete removal of `demo_mode` flags, demo bypass buttons, and hardcoded credentials from frontend source bundles.
+
+---
+
+## 6. Test Execution Instructions & Test Database Isolation
+
+### 6.1. Test Database Requirement
+Tests that require database transactions (`test_auth_rbac.py`, `test_observability.py`, `test_platform_admin.py`) instantiate an async test engine using `TEST_DATABASE_URL`:
 ```bash
 TEST_DATABASE_URL="postgresql+asyncpg://eduintel:eduintel_dev@localhost:5432/eduintel_test"
 ```
@@ -98,21 +138,32 @@ TEST_DATABASE_URL="postgresql+asyncpg://eduintel:eduintel_dev@localhost:5432/edu
 > docker exec -it eduintel-postgres psql -U eduintel -d eduintel -c "CREATE DATABASE eduintel_test;"
 > ```
 
-### 4.2. Running the Test Suite
+### 6.2. Running the Test Suites
+
+#### Backend Test Suite (Pytest)
 ```bash
 cd backend
 source venv/bin/activate
-
-# Run offline unit and guardrail tests (61 tests, zero DB required)
-pytest tests/test_guardrails.py tests/test_admin_assistant_security.py -v
+set -a && source .env && set +a
 
 # Run full suite including database integration tests
-TEST_DATABASE_URL="postgresql+asyncpg://eduintel:eduintel_dev@localhost:5432/eduintel_test" pytest tests/ -v
+pytest tests/ -v
+```
+
+#### Frontend Test Suites (Vitest & Node)
+```bash
+cd frontend
+
+# Run Vitest component & route protection suites (12 tests)
+npm test
+
+# Run Node.js security text scan (8 tests)
+node --test tests/test_sec11_demo_mode_remediation.js
 ```
 
 ---
 
-## 5. Coverage Gaps & Phase 4 Roadmap
+## 7. Coverage Gaps & Phase 4 Roadmap
 
 While current tests cover security, guardrails, and authentication thoroughly, Phase 4 (Testing Infrastructure & CI/CD) is scheduled to address the following gaps:
 

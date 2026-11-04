@@ -73,6 +73,20 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+# Record expected head dynamically from Alembic versions
+EXPECTED_HEAD=$(
+    cd "${BACKEND_DIR}"
+    venv/bin/alembic heads 2>/dev/null | grep -v "INFO" | awk '{print $1}' | head -n 1
+)
+log_info "Target migration DAG head: ${EXPECTED_HEAD}"
+
+# Record primary development database state prior to test run
+PRIMARY_PRE_REV=$(
+    cd "${BACKEND_DIR}"
+    venv/bin/alembic current 2>/dev/null | grep -v "INFO" | awk '{print $1}' | head -n 1 || true
+)
+log_info "Primary database baseline revision: ${PRIMARY_PRE_REV}"
+
 # ------------------------------------------------------------------------------
 # 3. Provision Isolated Ephemeral Database
 # ------------------------------------------------------------------------------
@@ -103,8 +117,8 @@ CURRENT_REV=$(
     DATABASE_URL="${TEST_DATABASE_URL}" venv/bin/alembic current 2>/dev/null | grep -v "INFO" | awk '{print $1}' | head -n 1
 )
 log_info "Reached revision: ${CURRENT_REV}"
-if [[ "${CURRENT_REV}" != "a7c8e9d0b1f2" ]]; then
-    log_error "Migration did not reach expected head 'a7c8e9d0b1f2'. Reached: '${CURRENT_REV}'"
+if [[ "${CURRENT_REV}" != "${EXPECTED_HEAD}" ]]; then
+    log_error "Migration did not reach expected head '${EXPECTED_HEAD}'. Reached: '${CURRENT_REV}'"
     exit 1
 fi
 
@@ -131,7 +145,23 @@ if [[ "${INDEX_COUNT}" -ne 7 ]]; then
     log_error "Expected 7 composite indexes created by migration 0023, found ${INDEX_COUNT}"
     exit 1
 fi
-log_success "Forward migration completed successfully: ${UPGRADE_TABLE_COUNT} tables and 7 composite indexes verified."
+
+# Verify migration 0024 columns exist
+HAS_IS_PLATFORM_ADMIN=$(docker exec "${CONTAINER_NAME}" psql -U eduintel -d "${TEST_DB}" -t -A -c \
+    "SELECT count(*) FROM information_schema.columns WHERE table_name='users' AND column_name='is_platform_admin';")
+if [[ "${HAS_IS_PLATFORM_ADMIN}" -ne 1 ]]; then
+    log_error "Expected column 'users.is_platform_admin' from migration 0024 not found."
+    exit 1
+fi
+
+HAS_CONTACT_EMAIL=$(docker exec "${CONTAINER_NAME}" psql -U eduintel -d "${TEST_DB}" -t -A -c \
+    "SELECT count(*) FROM information_schema.columns WHERE table_name='institutions' AND column_name='contact_email';")
+if [[ "${HAS_CONTACT_EMAIL}" -ne 1 ]]; then
+    log_error "Expected column 'institutions.contact_email' from migration 0024 not found."
+    exit 1
+fi
+
+log_success "Forward migration completed successfully: ${UPGRADE_TABLE_COUNT} tables, 7 composite indexes, and migration 0024 columns verified."
 
 # ------------------------------------------------------------------------------
 # 5. Reverse Migration: Downgrade Head (0023) -> Base (0001 -> empty)
@@ -175,8 +205,8 @@ REPLAY_REV=$(
     cd "${BACKEND_DIR}"
     DATABASE_URL="${TEST_DATABASE_URL}" venv/bin/alembic current 2>/dev/null | grep -v "INFO" | awk '{print $1}' | head -n 1
 )
-if [[ "${REPLAY_REV}" != "a7c8e9d0b1f2" ]]; then
-    log_error "Replay migration failed to reach head 'a7c8e9d0b1f2'. Reached: '${REPLAY_REV}'"
+if [[ "${REPLAY_REV}" != "${EXPECTED_HEAD}" ]]; then
+    log_error "Replay migration failed to reach head '${EXPECTED_HEAD}'. Reached: '${REPLAY_REV}'"
     exit 1
 fi
 
@@ -196,8 +226,8 @@ PRIMARY_REV=$(
     cd "${BACKEND_DIR}"
     venv/bin/alembic current 2>/dev/null | grep -v "INFO" | awk '{print $1}' | head -n 1
 )
-if [[ "${PRIMARY_REV}" != "a7c8e9d0b1f2" ]]; then
-    log_error "Primary development database was altered! Current rev: '${PRIMARY_REV}'"
+if [[ "${PRIMARY_REV}" != "${PRIMARY_PRE_REV}" ]]; then
+    log_error "Primary development database was altered! Baseline: '${PRIMARY_PRE_REV}', Current rev: '${PRIMARY_REV}'"
     exit 1
 fi
 

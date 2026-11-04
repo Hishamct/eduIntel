@@ -6,6 +6,7 @@ Ensures that tenant identity is derived strictly from server-side verified state
 preventing client-controlled parameter tampering or tenant spoofing.
 """
 
+import inspect
 import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -18,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal, get_db
 from app.institutions.models import Institution, InstitutionMembership
-from app.users.dependencies import get_current_user
+from app.users.dependencies import get_current_user, require_platform_admin
 from app.users.models import User
 
 PILOT_INSTITUTION_UUID = uuid.UUID("00000000-0000-0000-0000-000000000001")
@@ -91,6 +92,7 @@ class TenantContext:
     user_id: uuid.UUID
     role: str
     is_pilot: bool = False
+    is_platform_admin: bool = False
     permissions: list[str] = field(default_factory=list)
 
 
@@ -117,6 +119,32 @@ async def get_tenant_context(
     """
     raw_header = request.headers.get("X-Institution-Id")
     requested_institution_id = normalize_institution_id(raw_header)
+
+    # Verified Platform Admin: can inspect any specific institution or operate globally
+    if getattr(current_user, "is_platform_admin", False):
+        if requested_institution_id is not None:
+            inst_record = await db.scalar(
+                select(Institution).where(Institution.id == requested_institution_id)
+            )
+            if not inst_record:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Institution '{requested_institution_id}' not found.",
+                )
+            return TenantContext(
+                institution_id=inst_record.id,
+                user_id=current_user.id,
+                role="platform_admin",
+                is_pilot=(inst_record.id == PILOT_INSTITUTION_UUID),
+                is_platform_admin=True,
+            )
+        return TenantContext(
+            institution_id=PILOT_INSTITUTION_UUID,
+            user_id=current_user.id,
+            role="platform_admin",
+            is_pilot=True,
+            is_platform_admin=True,
+        )
 
     # Legacy/test support: If mock user has an attached institution_id attribute
     if hasattr(current_user, "institution_id"):
@@ -165,6 +193,14 @@ async def get_tenant_context(
             if hasattr(membership, "institution_id") and membership.institution_id == requested_institution_id
         ]
         if not matched:
+            inst_check = await db.scalar(
+                select(Institution).where(Institution.id == requested_institution_id)
+            )
+            if inst_check and not inst_check.is_active:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Institution '{inst_check.name}' is currently suspended.",
+                )
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Access denied: User is not an active member of institution '{requested_institution_id}'.",
@@ -222,7 +258,14 @@ async def get_tenant_db(
     if get_db in request.app.dependency_overrides:
         override = request.app.dependency_overrides[get_db]
         res = override()
-        yield res
+        if inspect.isasyncgen(res):
+            async for s in res:
+                yield s
+        elif inspect.isgenerator(res):
+            for s in res:
+                yield s
+        else:
+            yield res
         return
 
     try:
@@ -231,6 +274,51 @@ async def get_tenant_db(
                 await session.execute(
                     text("SELECT set_config('app.current_institution_id', :inst_id, true)"),
                     {"inst_id": str(tenant.institution_id)},
+                )
+                yield session
+    except OSError:
+        if settings.ENVIRONMENT != "production":
+            from unittest.mock import AsyncMock
+
+            yield AsyncMock()
+        else:
+            raise
+
+
+async def get_platform_admin_db(
+    request: Request,
+    current_user: User = Depends(require_platform_admin),
+) -> AsyncGenerator[AsyncSession, None]:
+    """
+    Dedicated privileged FastAPI dependency yielding an AsyncSession bound to a
+    transaction where PostgreSQL session parameter `app.is_platform_admin` is set to 'true'
+    using transaction-local `set_config(..., true)`.
+
+    Allows verified Platform Administrators to query cross-tenant datastores.
+    Security Invariants:
+    - Never accessible to normal users or institutional admins (guarded by require_platform_admin).
+    - Session parameter is scoped strictly to the current transaction (is_local=true),
+      guaranteeing zero state leakage across connection pool checkouts.
+    - PostgreSQL RLS enforces read-only access for cross-tenant operations.
+    """
+    if get_db in request.app.dependency_overrides:
+        override = request.app.dependency_overrides[get_db]
+        res = override()
+        if inspect.isasyncgen(res):
+            async for s in res:
+                yield s
+        elif inspect.isgenerator(res):
+            for s in res:
+                yield s
+        else:
+            yield res
+        return
+
+    try:
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                await session.execute(
+                    text("SELECT set_config('app.is_platform_admin', 'true', true)")
                 )
                 yield session
     except OSError:
