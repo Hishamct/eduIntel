@@ -14,6 +14,7 @@ apiClient.interceptors.response.use(
     if (error.response && error.response.status === 401) {
       sessionStorage.removeItem("is_authenticated");
       sessionStorage.removeItem("user_role");
+      sessionStorage.removeItem("is_platform_admin");
       localStorage.removeItem("access_token");
       localStorage.removeItem("demo_mode");
 

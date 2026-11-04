@@ -31,6 +31,10 @@ export const PORTAL_NAV_ITEMS = {
     { id: 'doubts', label: 'Doubt Forum', icon: 'forum' },
     { id: 'materials', label: 'Study Materials', icon: 'menu_book' },
     { id: 'self-eval', label: 'Self-Evaluation', icon: 'quiz' },
+  ],
+  platform_admin: [
+    { id: 'dashboard', label: 'Platform Overview', icon: 'dashboard' },
+    { id: 'institutions', label: 'Institutions', icon: 'domain' },
   ]
 };
 

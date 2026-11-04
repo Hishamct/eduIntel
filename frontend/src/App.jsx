@@ -24,6 +24,8 @@ import SalaryManagement from "./pages/admin/SalaryManagement";
 import AdminAssistant from "./pages/admin/AdminAssistant";
 import LlmUsage from "./pages/admin/LlmUsage";
 import AgentTraces from "./pages/admin/AgentTraces";
+import PlatformDashboard from "./pages/platform-admin/PlatformDashboard";
+import InstitutionManagement from "./pages/platform-admin/InstitutionManagement";
 
 
 function App() {
@@ -201,6 +203,23 @@ function App() {
           element={
             <ProtectedRoute>
               <SalaryManagement />
+            </ProtectedRoute>
+          }
+        />
+        {/* Platform Admin Workstream Routes */}
+        <Route
+          path="/platform-admin/dashboard"
+          element={
+            <ProtectedRoute requirePlatformAdmin={true}>
+              <PlatformDashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/platform-admin/institutions"
+          element={
+            <ProtectedRoute requirePlatformAdmin={true}>
+              <InstitutionManagement />
             </ProtectedRoute>
           }
         />
