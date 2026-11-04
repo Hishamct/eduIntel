@@ -82,6 +82,7 @@ Represents an independent coaching academy, school, or educational enterprise:
 - `id`: `UUID` (PK, `gen_random_uuid()`).
 - `name`: `VARCHAR(255)` (e.g. "Apex IIT-JEE Academy").
 - `slug`: `VARCHAR(100)` (Unique, Indexed, e.g. "apex-academy" for subdomain routing `apex.eduintel.ai`).
+- `contact_email`: `VARCHAR(255)` (Nullable, administrative contact email, Migration 0024).
 - `domain`: `VARCHAR(255)` (Nullable, custom domain e.g. "portal.apexacademy.in").
 - `tier`: `VARCHAR(50)` (`'starter' | 'pro' | 'enterprise'`).
 - `is_active`: `BOOLEAN` (Default `TRUE`).
@@ -95,7 +96,7 @@ Represents a human identity authenticated by the platform:
 - `hashed_password`: `VARCHAR(255)` (Bcrypt).
 - `name`: `VARCHAR(255)` (Full Name).
 - `phone`: `VARCHAR(50)` (Mobile number).
-- `is_platform_admin`: `BOOLEAN` (Default `FALSE` — Super Administrator).
+- `is_platform_admin`: `BOOLEAN` (Default `FALSE`, Indexed via `ix_users_is_platform_admin` — Super Administrator).
 - `is_active`: `BOOLEAN` (Default `TRUE`).
 - `created_at`, `updated_at`: `TIMESTAMPTZ`.
 
@@ -123,6 +124,17 @@ Connects a user to an institution and defines their authorization role:
    - System creates pending membership. If user exists, sends notification; if new, sends onboarding link.
 4. **Revocation:**
    - Setting `status = 'suspended'` immediately cuts access to that specific institution without terminating the user's accounts at other institutes.
+
+### 2.5. Platform Administration & Cross-Tenant Operations (Phase 2 Stages 4 & 5)
+1. **Global Super-Admin Boundary:** Platform Administrators (`users.is_platform_admin = true`) operate globally above tenant boundaries, managing institutions rather than intra-institution resources.
+2. **Read-Write Isolation (Migration 0025 / SEC-03):** 
+   - Privileged operations consume `get_platform_admin_db`, executing transaction-local `SET LOCAL app.is_platform_admin = 'true'`.
+   - Migration 0025 establishes command-specific RESTRICTIVE RLS policies: Platform Admins can read across all institutions (`FOR SELECT`), but cross-tenant mutations (`INSERT`, `UPDATE`, `DELETE`) are strictly denied at the database engine level unless explicitly scoped with an active `app.current_institution_id`.
+3. **Institution Operational Lifecycle & Suspension:**
+   - **Atomic Onboarding (`POST /institutions`):** Atomically provisions the institution, initial administrator user (`is_active=False`), admin profile, active membership, and generates a 48-hour SHA-256 hashed activation token.
+   - **Suspension (`PATCH /institutions/{id}/status`):** Toggles `is_active` status on the institution.
+   - **Fail-Closed Access Control:** Users whose sole membership belongs to a suspended institution are blocked from accessing the platform. Users with active memberships in other institutions retain access to those institutions.
+   - **Supervisory Governance:** Platform Admins retain full visibility into suspended institutions and can reactivate them at any time.
 
 ---
 
@@ -258,6 +270,12 @@ The architecture specified above was fully implemented in Phase 2 Stage 3 across
    - **SEC-S3-03:** Material download authorization evaluating institutional `tenant.role` instead of global `current_user.role`.
 5. **Empirical Engine Validation:**
    - 7 live empirical RLS isolation checks verified against a disposable PostgreSQL 16 container (`eduintel-test-postgres` on port 5433) running with unprivileged role `eduintel`.
-   - 328/328 automated backend regression tests passed in `pytest`.
+   - 328/328 automated backend regression tests passed in `pytest` at Stage 3 closure.
    - Verified in closure audit: [`docs/production-readiness/08-stage-3-closure-audit.md`](file:///home/dell/projects/eduIntel/docs/production-readiness/08-stage-3-closure-audit.md).
+6. **Platform Administration & Security Hardening (Phase 2 Stages 4 & 5 + Remediation):**
+   - Migration `0024_b8d9f0e1c2a3` added `users.is_platform_admin` and `institutions.contact_email`.
+   - Migration `0025_c9e0f2a1b3c4` split RLS policies into command-specific RESTRICTIVE rules, eliminating cross-tenant write/delete exposure (SEC-03).
+   - Atomic onboarding, single-use SHA-256 activation tokens, and email validation (`EmailStr`) implemented (SEC-01, SEC-04).
+   - Backend test suite expanded to 530 tests passed (`pytest`).
+   - Frontend route protection, login flow atomicity (SEC-02), and management UI verified across 12 Vitest tests and 8 Node tests.
 

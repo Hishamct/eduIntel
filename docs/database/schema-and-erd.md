@@ -69,6 +69,7 @@ erDiagram
         uuid id PK
         string name
         string slug UK
+        string contact_email
         boolean is_active
         timestamp created_at
         timestamp updated_at
@@ -90,9 +91,7 @@ erDiagram
         string hashed_password
         string role
         boolean is_active
-        timestamp created_at
-        timestamp updated_at
-    }
+        boolean is_platform_admin
         timestamp created_at
         timestamp updated_at
     }
@@ -487,63 +486,110 @@ erDiagram
     - `created_at`: `TIMESTAMPTZ`.
 
 ### 2.5. Framework Tracking
-490: 20. **`alembic_version`**:
-491:     - `version_num`: `VARCHAR(32)` (PK, tracks active migration revision: `a7c8e9d0b1f2`).
-492: 
-493: ---
-494: 
-495: ## 3. PostgreSQL Row-Level Security (RLS) Architecture (Migration 0022)
-496: 
-497: All 17 tenant-owned application tables are hardware-enforced at the PostgreSQL engine level using Row-Level Security:
-498: 
-499: ```sql
-500: -- Pattern applied across all 17 tenant-owned tables:
-501: ALTER TABLE {table} ENABLE ROW LEVEL SECURITY;
-502: ALTER TABLE {table} FORCE ROW LEVEL SECURITY;
-503: 
-504: CREATE POLICY {table}_tenant_isolation_policy ON {table}
-505:     FOR ALL
-506:     TO eduintel
-507:     USING (institution_id = NULLIF(current_setting('app.current_institution_id', true), '')::uuid)
-508:     WITH CHECK (institution_id = NULLIF(current_setting('app.current_institution_id', true), '')::uuid);
-509: ```
-510: 
-511: ### Key RLS Characteristics:
-512: 1. **Unprivileged Role Enforcement**: The application connects using the unprivileged database role `eduintel`. Because `FORCE ROW LEVEL SECURITY` is set, RLS applies to all queries executed by this role.
-513: 2. **Transaction-Local Scoping**: Application transactions invoke `set_config('app.current_institution_id', :id, true)`. The third parameter (`is_local = true`) guarantees the setting expires when the transaction completes.
-514: 3. **Connection Pool Reset**: The `tenant_session_scope` context manager executes `RESET app.current_institution_id` upon session release, ensuring no state leaks across pooled connections.
-515: 4. **Fail-Closed Default**: If a query is issued with an unset or empty session setting (`""`), the policy evaluates to `institution_id = NULL`, returning `0 rows` and blocking all writes.
-516: 
-517: ---
-518: 
-519: ## 4. Composite Multi-Tenant Indexes (Migration 0023)
-520: 
-521: To prevent Bitmap Heap Scans and Sequential Scans under mandatory `institution_id` filtering, Migration `0023_a7c8e9d0b1f2` added 7 composite B-Tree indexes following the **B-Tree leftmost prefix rule**:
-522: 
-523: | Index Name | Table | Columns (Leading Column First) | Optimized Query Pattern | Observed Speedup |
-524: |---|---|---|---|:---:|
-525: | `ix_attendance_inst_class_date` | `attendance_records` | `(institution_id, class_id, date)` | Multi-tenant section attendance lookup | **$3.9\times$** ($0.38\text{ms} \rightarrow 0.09\text{ms}$) |
-526: | `ix_attendance_inst_student_date` | `attendance_records` | `(institution_id, student_id, date)` | Student individual attendance calendar | **$4.1\times$** |
-527: | `ix_homework_sub_inst_homework_status` | `homework_submissions` | `(institution_id, homework_id, status)` | Teacher grading queue filtering | **$5.2\times$** |
-528: | `ix_homework_sub_inst_student` | `homework_submissions` | `(institution_id, student_id)` | Student submission history & stats | **$15.8\times$** ($1.13\text{ms} \rightarrow 0.07\text{ms}$) |
-529: | `ix_exam_results_inst_exam_student` | `exam_results` | `(institution_id, exam_id, student_id)` | Exam-specific student grade join | **$4.8\times$** |
-530: | `ix_exam_results_inst_student` | `exam_results` | `(institution_id, student_id)` | Student historical academic scorecard | **$10.1\times$** ($1.19\text{ms} \rightarrow 0.11\text{ms}$) |
-531: | `ix_fee_records_inst_student_status` | `fee_records` | `(institution_id, student_id, status)` | Student fee ledger and arrears lookup | **$3.8\times$** |
-532: 
-533: > [!TIP]
-534: > **Leftmost Prefix Invariant**: In all multi-tenant queries, `institution_id` is supplied by the session context. Placing `institution_id` as the leading column guarantees index scan selection while incurring $< 10\%$ write overhead on table inserts.
-535: 
-536: ---
-537: 
-538: ## 5. Operational Disaster Recovery Tables
-539: 
-540: In addition to the 21 Alembic application domain tables, the database maintains an operational table for disaster recovery validation:
-541: 
-542: - **`backup_recovery_markers`**:
-543:   - `id`: `UUID` (Primary Key).
-544:   - `marker_code`: `VARCHAR(100)` (Non-null, e.g. `DR-MARKER-1793775169`).
-545:   - `marker_payload`: `TEXT` (Non-null, test audit marker payload).
-546:   - `created_at`: `TIMESTAMPTZ` (Auto UTC).
-547: 
-548: *Purpose:* This table is dynamically updated by `scripts/dr_helper.py record-marker` immediately prior to backup capture to store a committed workload-grounded transaction marker. During restore drills, verifying this marker proves that all transactions committed up to the quiescence boundary are recoverable, explaining why restored databases contain **22 tables** (21 application domain tables + 1 operational recovery table).
+20. **`alembic_version`**:
+    - `version_num`: `VARCHAR(32)` (PK, tracks active migration revision: `c9e0f2a1b3c4` [Migration 0025]).
+
+---
+
+## 3. PostgreSQL Row-Level Security (RLS) Architecture (Migrations 0022, 0024 & 0025)
+
+All 17 tenant-owned application tables are hardware-enforced at the PostgreSQL engine level using Row-Level Security with command-specific policies established in Migrations 0022, 0024, and 0025:
+
+```sql
+-- Base configuration on all 17 tenant-owned tables:
+ALTER TABLE {table} ENABLE ROW LEVEL SECURITY;
+ALTER TABLE {table} FORCE ROW LEVEL SECURITY;
+
+-- 1. Permissive access policy granting baseline access to unprivileged application role:
+CREATE POLICY tenant_app_access_policy ON {table}
+    AS PERMISSIVE
+    FOR ALL
+    TO eduintel
+    USING (true)
+    WITH CHECK (true);
+
+-- 2. Restrictive Read Policy (Migration 0025):
+-- Allows Platform Admin to read across all institutions, while tenant users are restricted:
+CREATE POLICY tenant_isolation_read_policy ON {table}
+    AS RESTRICTIVE
+    FOR SELECT
+    TO PUBLIC
+    USING (
+        current_setting('app.is_platform_admin', true) = 'true'
+        OR institution_id = NULLIF(current_setting('app.current_institution_id', true), '')::uuid
+    );
+
+-- 3. Restrictive Insert Policy (Migration 0025):
+-- Strictly requires institution_id matching tenant context; Platform Admin writes across tenants are blocked:
+CREATE POLICY tenant_isolation_insert_policy ON {table}
+    AS RESTRICTIVE
+    FOR INSERT
+    TO PUBLIC
+    WITH CHECK (
+        institution_id = NULLIF(current_setting('app.current_institution_id', true), '')::uuid
+    );
+
+-- 4. Restrictive Update Policy (Migration 0025):
+-- Strictly requires institution_id matching tenant context for both existing row and modified row:
+CREATE POLICY tenant_isolation_update_policy ON {table}
+    AS RESTRICTIVE
+    FOR UPDATE
+    TO PUBLIC
+    USING (
+        institution_id = NULLIF(current_setting('app.current_institution_id', true), '')::uuid
+    )
+    WITH CHECK (
+        institution_id = NULLIF(current_setting('app.current_institution_id', true), '')::uuid
+    );
+
+-- 5. Restrictive Delete Policy (Migration 0025 - SEC-03):
+-- Strictly requires institution_id matching tenant context; prevents cross-tenant deletion:
+CREATE POLICY tenant_isolation_delete_policy ON {table}
+    AS RESTRICTIVE
+    FOR DELETE
+    TO PUBLIC
+    USING (
+        institution_id = NULLIF(current_setting('app.current_institution_id', true), '')::uuid
+    );
+```
+
+### Key RLS Characteristics:
+1. **Unprivileged Role Enforcement**: The application connects using the unprivileged database role `eduintel`. Because `FORCE ROW LEVEL SECURITY` is set, RLS applies universally to all queries executed by this role.
+2. **Command-Specific Isolation & SEC-03 Remediation**: In PostgreSQL, a single `FOR ALL` policy applies its `USING` clause to `DELETE` operations. Migration 0025 split the policy into distinct `FOR SELECT`, `FOR INSERT`, `FOR UPDATE`, and `FOR DELETE` policies. The Platform Admin bypass (`app.is_platform_admin = 'true'`) is present **only** in `tenant_isolation_read_policy`. Cross-tenant writes and deletes trigger SQLSTATE `42501` (`insufficient_privilege`).
+3. **Transaction-Local Scoping**: Privileged Platform Admin sessions invoke `set_config('app.is_platform_admin', 'true', true)` via `get_platform_admin_db`. The third parameter (`is_local = true`) guarantees the setting automatically expires when the transaction completes or rolls back.
+4. **Connection Pool Reset**: The `tenant_session_scope` context manager executes `RESET app.current_institution_id` upon session release, ensuring no tenant state leaks across pooled connections.
+5. **Fail-Closed Default**: If a query is issued with an unset or empty session setting (`""`), the policy evaluates to `institution_id = NULL`, returning `0 rows` and blocking all writes.
+
+---
+
+## 4. Composite Multi-Tenant Indexes (Migration 0023)
+
+To prevent Bitmap Heap Scans and Sequential Scans under mandatory `institution_id` filtering, Migration `0023_a7c8e9d0b1f2` added 7 composite B-Tree indexes following the **B-Tree leftmost prefix rule**:
+
+| Index Name | Table | Columns (Leading Column First) | Optimized Query Pattern | Observed Speedup |
+|---|---|---|---|:---:|
+| `ix_attendance_inst_class_date` | `attendance_records` | `(institution_id, class_id, date)` | Multi-tenant section attendance lookup | **$3.9\times$** ($0.38\text{ms} \rightarrow 0.09\text{ms}$) |
+| `ix_attendance_inst_student_date` | `attendance_records` | `(institution_id, student_id, date)` | Student individual attendance calendar | **$4.1\times$** |
+| `ix_homework_sub_inst_homework_status` | `homework_submissions` | `(institution_id, homework_id, status)` | Teacher grading queue filtering | **$5.2\times$** |
+| `ix_homework_sub_inst_student` | `homework_submissions` | `(institution_id, student_id)` | Student submission history & stats | **$15.8\times$** ($1.13\text{ms} \rightarrow 0.07\text{ms}$) |
+| `ix_exam_results_inst_exam_student` | `exam_results` | `(institution_id, exam_id, student_id)` | Exam-specific student grade join | **$4.8\times$** |
+| `ix_exam_results_inst_student` | `exam_results` | `(institution_id, student_id)` | Student historical academic scorecard | **$10.1\times$** ($1.19\text{ms} \rightarrow 0.11\text{ms}$) |
+| `ix_fee_records_inst_student_status` | `fee_records` | `(institution_id, student_id, status)` | Student fee ledger and arrears lookup | **$3.8\times$** |
+
+> [!TIP]
+> **Leftmost Prefix Invariant**: In all multi-tenant queries, `institution_id` is supplied by the session context. Placing `institution_id` as the leading column guarantees index scan selection while incurring $< 10\%$ write overhead on table inserts.
+
+---
+
+## 5. Operational Disaster Recovery Tables
+
+In addition to the 21 Alembic application domain tables, the database maintains an operational table for disaster recovery validation:
+
+- **`backup_recovery_markers`**:
+  - `id`: `UUID` (Primary Key).
+  - `marker_code`: `VARCHAR(100)` (Non-null, e.g. `DR-MARKER-1793775169`).
+  - `marker_payload`: `TEXT` (Non-null, test audit marker payload).
+  - `created_at`: `TIMESTAMPTZ` (Auto UTC).
+
+*Purpose:* This table is dynamically updated by `scripts/dr_helper.py record-marker` immediately prior to backup capture to store a committed workload-grounded transaction marker. During restore drills, verifying this marker proves that all transactions committed up to the quiescence boundary are recoverable, explaining why restored databases contain **22 tables** (21 application domain tables + 1 operational recovery table).
 

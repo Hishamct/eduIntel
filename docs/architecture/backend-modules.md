@@ -1,6 +1,6 @@
 # EduIntel AI — Backend Modules Architecture
 
-The EduIntel backend is built as a **Modular Monolith** organized into **16 distinct domain modules** grouped across **four functional tiers**. Each module is packaged inside its own directory within [`backend/app/`](file:///home/dell/projects/eduIntel/backend/app/), adhering to clean architecture principles with separate routers, schemas, models, and domain services.
+The EduIntel backend is built as a **Modular Monolith** organized into **17 distinct domain modules** grouped across **four functional tiers**. Each module is packaged inside its own directory within [`backend/app/`](file:///home/dell/projects/eduIntel/backend/app/), adhering to clean architecture principles with separate routers, schemas, models, and domain services.
 
 ---
 
@@ -9,9 +9,10 @@ The EduIntel backend is built as a **Modular Monolith** organized into **16 dist
 ```mermaid
 flowchart TD
     subgraph Tier1 ["Tier 1: Shared Modules"]
-        Core["core<br><i>Config, DB, LLM Client</i>"]
+        Core["core<br><i>Config, DB, Tenant Context, LLM Client</i>"]
         Auth["auth<br><i>JWT, RBAC, Passwords</i>"]
-        Users["users<br><i>Profiles, Identity</i>"]
+        Users["users<br><i>Profiles, Identity, require_platform_admin</i>"]
+        Inst["institutions<br><i>Tenants, Memberships, Onboarding</i>"]
     end
 
     subgraph Tier2 ["Tier 2: Portal Modules"]
@@ -40,6 +41,9 @@ flowchart TD
     Auth --> Core
     Users --> Auth
     Users --> Core
+    Inst --> Core
+    Inst --> Auth
+    Inst --> Users
 
     StudentMod --> Core
     StudentMod --> Auth
@@ -87,25 +91,33 @@ Shared modules form the foundational layer of the application. They provide iden
 - **Key Files**:
   - `config.py`: `Settings` class using `pydantic-settings` to parse environment variables (`DATABASE_URL`, `JWT_SECRET_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY`, etc.).
   - `database.py`: Asynchronous engine creation (`create_async_engine`), `AsyncSession` factory (`async_sessionmaker`), and the FastAPI dependency `get_db()`.
+  - `tenant.py`: Multi-tenant context extraction (`get_tenant_context`), institutional role validation (`require_tenant_role`), transaction-local tenant DB session (`get_tenant_db`), and privileged platform admin DB session (`get_platform_admin_db`).
   - `models.py`: Declarative Base and `TimestampMixin` (`id`, `created_at`, `updated_at`).
   - `llm_client.py`: Centralized LLM inference wrapper managing primary Google Gemini (`gemini-3.6-flash`) with automatic rate-limit detection and immediate fallback to Groq (`openai/gpt-oss-120b`). Emits `LLMCallUsage` metrics.
 
 ### 2.2. `auth` — Authentication & Identity
 - **Directory**: [`backend/app/auth/`](file:///home/dell/projects/eduIntel/backend/app/auth/)
 - **Key Files**:
-  - `router.py`: Handles `/api/auth/signup`, `/api/auth/login`, `/api/auth/forgot-password`, `/api/auth/reset-password`.
+  - `router.py`: Handles `/auth/signup` (disabled, SEC-02), `/auth/login` (HttpOnly cookie, SEC-10), `/auth/logout`, `/auth/password-reset/request`, `/auth/password-reset/confirm`.
   - `security.py`: Password hashing with bcrypt, JWT access token generation and decoding utilities.
-  - `service.py`: User registration validation, password authentication logic, and token dispatch.
-  - `models.py`: `User` model with `email`, `hashed_password`, `role`, and `is_active`.
-  - `schemas.py`: Pydantic models for signup, login, password reset, and token response.
+  - `service.py`: User registration validation, password authentication logic, SHA-256 token hashing, and SMTP invitation dispatch.
+  - `models.py`: `User` model with `email`, `hashed_password`, `role`, `is_active`, `is_platform_admin`.
+  - `schemas.py`: Pydantic models for login, password reset, and token response.
 
 ### 2.3. `users` — Profiles & Access Dependencies
 - **Directory**: [`backend/app/users/`](file:///home/dell/projects/eduIntel/backend/app/users/)
 - **Key Files**:
-  - `dependencies.py`: Core FastAPI security dependencies: `get_current_user` (JWT validation) and `require_role(["admin", "teacher", "student"])`.
+  - `dependencies.py`: Core FastAPI security dependencies: `get_current_user` (JWT validation), `require_role`, and `require_platform_admin` (direct database check).
   - `router.py`: Endpoints for `/api/users/me` and role-specific profile updates.
   - `models.py`: `StudentProfile` (grade, roll_number, parent_email), `TeacherProfile` (department, designation), and `AdminProfile`.
   - `schemas.py`: Profile view and edit schemas.
+
+### 2.4. `institutions` — Multi-Tenancy & Platform Administration
+- **Directory**: [`backend/app/institutions/`](file:///home/dell/projects/eduIntel/backend/app/institutions/)
+- **Key Files**:
+  - `router.py`: Platform Admin institution listing with live aggregates (`GET /institutions`), atomic onboarding (`POST /institutions`), caller memberships (`GET /institutions/me`), active tenant context (`GET /institutions/current`), institution detail (`GET /institutions/{id}`), and operational status updates (`PATCH /institutions/{id}/status`).
+  - `models.py`: `Institution` (slug, contact_email, is_active) and `InstitutionMembership` (user_id, institution_id, role, status).
+  - `schemas.py`: Input/output Pydantic schemas validating `EmailStr` (SEC-01), accurate delivery reporting (SEC-04), and status updates.
 
 ---
 

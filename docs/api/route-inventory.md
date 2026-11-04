@@ -51,12 +51,12 @@ This inventory documents all **66 endpoints** across the **17 routers** mounted 
 
 | Method | Path | Auth / Role | Description | Request Body | Response |
 |---|---|:---:|---|---|---|
-| `POST` | `/institutions` | `admin` | Create new institution | `InstitutionCreate` (name, slug, domain) | `201 Created` (`InstitutionOut`) |
-| `GET` | `/institutions` | `admin` | List registered institutions | None | `200 OK` (`List[InstitutionOut]`) |
-| `GET` | `/institutions/{id}` | Authenticated | Retrieve institution details by ID | None | `200 OK` (`InstitutionOut`) |
-| `GET` | `/institutions/by-slug/{slug}`| Public / Auth | Lookup institution by subdomain slug | None | `200 OK` (`InstitutionOut`) |
-| `POST` | `/institutions/{id}/members` | `admin` | Assign user to institution with role | `MembershipCreate` (user_id, role) | `201 Created` (`MembershipOut`) |
-| `GET` | `/institutions/{id}/members` | `admin` | List members and roles for institution | None | `200 OK` (`List[MembershipOut]`) |
+| `GET` | `/institutions` | `platform_admin` | List all institutions with aggregated student, teacher, and admin counts (via `get_platform_admin_db`) | None | `200 OK` (`List[InstitutionListItemResponse]`) |
+| `POST` | `/institutions` | `platform_admin` | Atomically provision institution, initial inactive admin, membership, and 48h activation token | `InstitutionOnboardRequest` (`name`, `slug`, `admin_email`, `admin_name`, `contact_email`) | `201 Created` (`InstitutionOnboardResponse`) |
+| `GET` | `/institutions/me` | Authenticated | Retrieve all active institution memberships for current user | None | `200 OK` (`List[UserInstitutionMembershipResponse]`) |
+| `GET` | `/institutions/current` | Authenticated | Retrieve active tenant institution details resolved from request context | None | `200 OK` (`InstitutionResponse`) |
+| `GET` | `/institutions/{institution_id}` | `platform_admin` | Retrieve detailed metrics and membership breakdown for specific institution | None | `200 OK` (`InstitutionListItemResponse`) |
+| `PATCH` | `/institutions/{institution_id}/status` | `platform_admin` | Update institution operational status (active / suspended) with reason | `InstitutionStatusUpdate` (`is_active`, `reason`) | `200 OK` (`InstitutionResponse`) |
 
 ---
 

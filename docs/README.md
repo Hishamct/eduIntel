@@ -11,10 +11,10 @@ docs/
 ├── README.md                           # This master documentation index
 ├── project/
 │   ├── purpose-and-scope.md            # Vision, business requirements, personas & scope boundaries
-│   └── feature-matrix.md               # Implementation status across 16 backend modules & 21 pages
+│   └── feature-matrix.md               # Implementation status across 17 backend modules & 23 pages
 ├── architecture/
 │   ├── system-overview.md              # System context, data topology, component interaction
-│   ├── backend-modules.md              # Detailed guide to all 16 backend domain modules
+│   ├── backend-modules.md              # Detailed guide to all 17 backend domain modules
 │   └── adr/                            # Architecture Decision Records
 │       ├── 0001-modular-monolith-pattern.md
 │       ├── 0002-async-sqlalchemy-fastapi.md
@@ -27,7 +27,7 @@ docs/
 │   └── route-inventory.md              # Complete catalog of all 66 endpoints across 17 routers
 ├── database/
 │   ├── schema-and-erd.md               # 21 PostgreSQL tables, composite indexes, RLS & Mermaid ERD
-│   └── migrations.md                   # Alembic migration history (23 revisions) and reversibility
+│   └── migrations.md                   # Alembic migration history (25 revisions) and reversibility
 ├── security/
 │   ├── auth-and-rbac.md                # JWT authentication, HttpOnly cookies, tenant-scoping & RBAC
 │   └── guardrails-and-pii.md           # PII redaction, prompt injection defense, audit logs & anti-cheating
@@ -39,7 +39,7 @@ docs/
 │   ├── local-setup.md                  # Local development installation, environment variables & Docker
 │   └── standards-and-workflow.md       # Git branching, commit conventions, code formatting & review rules
 ├── testing/
-│   └── testing-strategy.md             # Pytest harness, 21 test suites (334 tests), mock strategies
+│   └── testing-strategy.md             # Pytest harness (530 tests across 22 suites), Vitest frontend suites
 ├── deployment/
 │   ├── docker-architecture.md          # Docker Compose configurations, volumes & networking
 │   └── deployment-topology.md          # Deployment topology: historical AWS, current local, proposed cloud
@@ -66,13 +66,13 @@ docs/
 - **[Route Inventory](api/route-inventory.md)**: Full inventory of 66 API endpoints with HTTP verbs, path parameters, role requirements, request schemas, and responses.
 
 ### 🗄️ 4. Data & Persistence
-- **[Schema and ERD](database/schema-and-erd.md)**: 21 PostgreSQL relational models, data types, constraints, foreign key mappings, Migration 0023 composite B-tree indexes, Row-Level Security policies, and entity relationship diagrams.
-- **[Database Migrations](database/migrations.md)**: Alembic migration sequence (23 revisions), baseline history, bidirectional downgrade reversibility, and ephemeral verification harness.
+- **[Schema and ERD](database/schema-and-erd.md)**: 21 PostgreSQL relational models, data types, constraints, foreign key mappings, Migration 0023 composite B-tree indexes, Migration 0025 Row-Level Security policies, and entity relationship diagrams.
+- **[Database Migrations](database/migrations.md)**: Alembic migration sequence (25 revisions), baseline history, bidirectional downgrade reversibility, and ephemeral verification harness.
 - **[Phase 3 Database Integrity Implementation Plan](production-readiness/09-phase-3-database-integrity-implementation-plan.md)**: Structured plan for async connection pooling resilience, composite indexing, ephemeral migration verification, AEAD encrypted backups, and Level 4 disaster recovery drills.
 - **[Phase 3 Database Integrity Closure Report](production-readiness/10-phase-3-database-integrity-report.md)**: Final signed-off closure report certifying completion of Phase 03 across Stages 3A–3E (Verdict: **CERTIFIED PRODUCTION READY**).
 
 ### 🛡️ 5. Security & Governance
-- **[Authentication & RBAC](security/auth-and-rbac.md)**: Password hashing with bcrypt, JWT token issuance via `HttpOnly` cookies, dual-mode auth, `require_tenant_role` dependencies, and privilege escalation mitigations.
+- **[Authentication & RBAC](security/auth-and-rbac.md)**: Password hashing with bcrypt, JWT token issuance via `HttpOnly` cookies, dual-mode auth, `require_platform_admin` & `require_tenant_role` dependencies, and privilege escalation mitigations.
 - **[AI Guardrails & PII](security/guardrails-and-pii.md)**: Automated PII redaction engine (Aadhaar, phone, email, IP, credit cards), prompt injection defenses, and Socratic anti-cheating mechanisms.
 - **[Security Audit & Remediation Tracker](security/security-audit.md)**: Comprehensive vulnerability catalog and Phase 2B remediation tracker for SEC-01 through SEC-19.
 - **[Authorization Matrix](security/authorization-matrix.md)**: Complete endpoint-by-endpoint RBAC, institutional scoping, and multi-factor relational ownership matrix.
@@ -80,6 +80,7 @@ docs/
 - **[Multi-Tenant Architecture](architecture/multi-tenant-architecture.md)**: Verified multi-tenant isolation specifications, membership model, and PostgreSQL RLS design.
 - **[Stage 3 Diff Review & Live RLS Validation](production-readiness/07-stage-3-diff-review-and-rls-validation-report.md)**: Independent diff review and empirical PostgreSQL 16 RLS engine validation report.
 - **[Stage 3 Multi-Tenancy Closure Audit](production-readiness/08-stage-3-closure-audit.md)**: Final closure audit certifying completion of Phase 2 Stage 3 (Verdict: **READY TO CLOSE**).
+- **[Platform Admin Implementation & Remediation Plan](production-readiness/11-platform-admin-implementation-plan.md)**: Plan, security audit remediation (SEC-01 through SEC-05), Migration 0025 command-specific RLS policies, and final sign-off.
 
 ### 🤖 6. Artificial Intelligence & Analytics
 - **[RAG Architecture](ai/rag-architecture.md)**: Vector embedding pipelines using Google Gemini, persistent ChromaDB collections, chunking strategies, and Socratic query synthesis.

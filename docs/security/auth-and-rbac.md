@@ -166,7 +166,52 @@ Simple role checks (`require_role("teacher")`) are insufficient for multi-tenant
    - Verifies target user is an active student with a valid profile (returns 404 if missing or non-student).
    - Verifies requesting teacher has an active timetable assignment for that student's section (returns 403 otherwise). Administrators have supervisory read access.
 
-### 2.3. Endpoint Authorization Matrix
+### 2.3. Platform Administrator Role & Privileged Scope
+
+In Phase 2 Stages 4 & 5, global multi-institution management was introduced for the `platform_admin` role. Unlike institutional roles (`admin`, `teacher`, `student`) that operate strictly inside a single institution tenant context, Platform Administrators govern the entire platform.
+
+#### 2.3.1. Database Identity & Indexing (Migration 0024)
+- **Column**: `users.is_platform_admin` (`BOOLEAN NOT NULL DEFAULT false`).
+- **Index**: `ix_users_is_platform_admin` (B-Tree on `users(is_platform_admin)`).
+- **Decoupling**: A platform admin may have `user.role == "admin"`, but their platform-wide privileges stem strictly from `is_platform_admin = true`.
+
+#### 2.3.2. Authoritative Database Enforcement (`require_platform_admin`)
+[`backend/app/users/dependencies.py`](file:///home/dell/projects/eduIntel/backend/app/users/dependencies.py):
+- `require_platform_admin` depends on `get_current_user`.
+- Checks the authenticated user's live database record (`current_user.is_platform_admin`).
+- Rejects requests with `403 Forbidden ("Platform Administrator privileges required")` if false or inactive.
+- **Security Rule**: Role checks **never** trust JWT claims, request headers, or frontend role state. The database is queried authoritatively on every request.
+
+#### 2.3.3. Transaction-Local Cross-Tenant Session (`get_platform_admin_db`)
+[`backend/app/core/tenant.py`](file:///home/dell/projects/eduIntel/backend/app/core/tenant.py):
+- Privileged endpoints consume `get_platform_admin_db` instead of `get_db` or `get_tenant_db`.
+- Executes `SELECT set_config('app.is_platform_admin', 'true', true)`.
+- The third argument (`is_local = true`) guarantees the setting automatically reverts to empty when the transaction commits or rolls back.
+- When the connection is returned to the pool, `RESET app.is_platform_admin` is executed, preventing privilege leakage across pooled connections.
+
+#### 2.3.4. Secure Institution Onboarding & Activation Flow
+[`backend/app/institutions/router.py`](file:///home/dell/projects/eduIntel/backend/app/institutions/router.py):
+- **Atomic Provisioning**: Institution, initial administrator user, admin profile, and membership are created inside a single atomic database transaction. Any failure (e.g. duplicate slug or email) rolls back all records, leaving zero orphaned accounts.
+- **Pre-Activation Inactivity & Random Password Lockout**: Initial administrator accounts are provisioned with `is_active=False` and a 32-byte cryptographically random password (`secrets.token_urlsafe(32)`). They cannot authenticate via `/auth/login` (which fails closed on inactive accounts) until activation completes.
+- **Activation Token Cryptography**:
+  - Raw token: 32-byte URL-safe string (`secrets.token_urlsafe(32)`).
+  - Storage: Only the SHA-256 hex digest is stored in `password_reset_tokens`.
+  - Expiry: Strictly 48 hours (`timedelta(hours=48)`).
+  - Single-Use: Upon activation (`POST /auth/password-reset/confirm`), the token is marked `is_used=True`, the user's password is set, and `is_active` is updated to `True`.
+- **Email Validation & Delivery Verification (SEC-01 & SEC-04)**:
+  - Both `admin_email` and optional `contact_email` are validated via Pydantic `EmailStr`, returning HTTP 422 for malformed syntax.
+  - `invitation_sent` accurately reflects actual delivery evidence: `True` only when SMTP is configured and transmission succeeds; `False` if unconfigured or failed, accompanied by a sanitized `invitation_error` message.
+  - One-time fallback: When unconfigured/failed, `activation_token` is returned once in the response body to the authorized Platform Admin, never logged or stored in browser storage.
+
+#### 2.3.5. Out-of-Band CLI Provisioner
+[`scripts/create_platform_admin.py`](file:///home/dell/projects/eduIntel/scripts/create_platform_admin.py):
+- Secure command-line tool for provisioning the initial Platform Administrator.
+- Enforces strict password complexity ($\ge 12$ characters, upper, lower, digits, symbols).
+- Bypasses public signup (which remains disabled, SEC-02) and ensures no plaintext tokens or passwords appear in shell logs.
+
+---
+
+### 2.4. Endpoint Authorization Matrix
 
 | Endpoint Path | Method | Minimum Role | Relational / Ownership Requirement |
 |---|:---:|:---:|---|
@@ -194,26 +239,44 @@ Simple role checks (`require_role("teacher")`) are insufficient for multi-tenant
 | `/ml/explain/at-risk/{student_id}` | `GET` | `teacher`, `admin` | Timetable section assignment required for teachers (SEC-07) |
 | `/reports/parent-report/{student_id}`| `POST`| `teacher`, `admin` | Timetable section assignment + academic records (SEC-03) |
 | `/agents/admin-assistant/chat` | `POST` | `admin` | Tenant reporting authorization required (SEC-09) |
+| `/institutions` | `GET` | `platform_admin` | Platform Admin only; live metrics and aggregated institution roster |
+| `/institutions` | `POST` | `platform_admin` | Platform Admin only; atomic institution + admin user + membership onboarding |
+| `/institutions/me` | `GET` | Authenticated | Scoped to `current_user.id` active institution memberships |
+| `/institutions/current` | `GET` | Authenticated | Resolves caller's current tenant context |
+| `/institutions/{id}` | `GET` | `platform_admin` | Platform Admin only; institution detail and user breakdown |
+| `/institutions/{id}/status` | `PATCH` | `platform_admin` | Platform Admin only; suspend/reactivate institution |
 
 ---
 
-## 3. Frontend Route Protection & Storage Hygiene (SEC-10, SEC-11)
+## 3. Frontend Route Protection & Storage Hygiene (SEC-10, SEC-11, SEC-02)
 
 ### 3.1. Route Guard ([`frontend/src/components/ProtectedRoute.jsx`](file:///home/dell/projects/eduIntel/frontend/src/components/ProtectedRoute.jsx))
-- Evaluates strictly `sessionStorage.getItem("is_authenticated") === "true"`.
+- Evaluates `sessionStorage.getItem("is_authenticated") === "true"`.
+- If unauthenticated, navigates immediately to `/login`.
+- Evaluates `requirePlatformAdmin` flag:
+  - If a route requires platform admin privileges (e.g. `/platform-admin/dashboard`, `/platform-admin/institutions`) and `sessionStorage.getItem("is_platform_admin") !== "true"`, the user is redirected to `/admin/dashboard`.
+- Evaluates `allowedRoles`:
+  - If the user's role is not in `allowedRoles`, redirects to the user's designated home route based on `user_role`.
 - `localStorage.getItem("demo_mode")` bypass is completely removed.
-- Unauthenticated requests immediately execute `<Navigate to="/login" replace />`.
 
-### 3.2. Response Interceptor & Storage Purging ([`frontend/src/api/client.js`](file:///home/dell/projects/eduIntel/frontend/src/api/client.js))
+### 3.2. Atomic Login Session State (SEC-02 Remediation) ([`frontend/src/pages/auth/Login.jsx`](file:///home/dell/projects/eduIntel/frontend/src/pages/auth/Login.jsx))
+- Clears stale session state (`is_authenticated`, `user_role`, `is_platform_admin`, `user_email`) at the start of submission.
+- Calls `POST /auth/login` to obtain authentication credentials.
+- Calls `GET /users/me` to authoritatively determine user identity, active status, role, and `is_platform_admin`.
+- Sets `is_authenticated`, `user_role`, and `is_platform_admin` in `sessionStorage` **atomically only after both API calls succeed**.
+- If either call fails, or if an account is inactive, all session keys are purged immediately, preventing partial or stale session privilege escalation.
+- Intended routing: Platform Admins are redirected to `/platform-admin/dashboard`; institutional users to their respective dashboards (`/admin/dashboard`, `/teacher/dashboard`, `/student/dashboard`).
+
+### 3.3. Response Interceptor & Storage Purging ([`frontend/src/api/client.js`](file:///home/dell/projects/eduIntel/frontend/src/api/client.js))
 - Configured with `withCredentials: true` so modern browsers automatically send `HttpOnly` cookies.
 - On HTTP `401 Unauthorized`:
-  - Purges `sessionStorage.is_authenticated` and `sessionStorage.user_role`.
-  - Clears `localStorage.access_token` and `localStorage.demo_mode`.
+  - Purges `sessionStorage.is_authenticated`, `sessionStorage.user_role`, `sessionStorage.is_platform_admin`, and `sessionStorage.user_email`.
+  - Clears legacy tokens (`localStorage.access_token`).
   - Redirects to `/login` without infinite loops.
 
-### 3.3. Development Credentials Protection ([`frontend/src/pages/auth/Login.jsx`](file:///home/dell/projects/eduIntel/frontend/src/pages/auth/Login.jsx))
-- Demo bypass buttons are deleted from the codebase.
-- Helper Fill buttons are wrapped in `{import.meta.env.DEV && (...)}`, ensuring development credentials are completely stripped from production bundles by the Vite compiler.
+### 3.4. Development Credentials Protection ([`frontend/src/pages/auth/Login.jsx`](file:///home/dell/projects/eduIntel/frontend/src/pages/auth/Login.jsx))
+- Demo bypass buttons are permanently deleted from the codebase.
+- Helper Fill buttons are wrapped in `{import.meta.env.DEV && (...)}`, ensuring development test credentials are completely stripped from production bundles by Vite tree-shaking.
 
 ---
 
