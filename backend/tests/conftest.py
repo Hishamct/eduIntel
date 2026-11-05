@@ -219,6 +219,17 @@ def verify_and_prepare_test_database():
                 raise RuntimeError("Unprivileged application role 'eduintel_app' does not exist in PostgreSQL")
             if app_role["rolsuper"] or app_role["rolbypassrls"]:
                 raise RuntimeError("Role 'eduintel_app' must NOT have rolsuper or rolbypassrls privileges")
+
+            # 5. Assert eduintel_app inherits application access policy role eduintel
+            membership = await conn.fetchval("""
+                SELECT 1
+                FROM pg_auth_members m
+                JOIN pg_roles r_member ON r_member.oid = m.member
+                JOIN pg_roles r_role ON r_role.oid = m.roleid
+                WHERE r_member.rolname = 'eduintel_app' AND r_role.rolname = 'eduintel'
+            """)
+            if not membership:
+                raise RuntimeError("Role 'eduintel_app' must be granted 'eduintel' role for RLS permissive policies")
         finally:
             await conn.close()
 
