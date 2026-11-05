@@ -161,8 +161,6 @@ async def get_weak_topic_predictions(
     if not by_topic:
         return []
 
-    overall_avg = np.mean([float(e.score) for e in exams])
-
     bundle = _load_weak_topic_model()
     model = bundle["model"]
     feature_cols = bundle["feature_cols"]

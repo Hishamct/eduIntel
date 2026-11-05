@@ -68,7 +68,7 @@ async def get_at_risk_explanation(db: AsyncSession, student_id: uuid.UUID) -> di
     contributions = shap_values[0]
 
     factors = []
-    for col, contribution in zip(feature_cols, contributions):
+    for col, contribution in zip(feature_cols, contributions, strict=False):
         factors.append(
             {
                 "feature": col,

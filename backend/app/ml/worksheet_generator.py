@@ -73,10 +73,10 @@ Example format:
 
     try:
         questions = json.loads(raw_text)
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as err:
         raise ValueError(
             f"Model did not return valid JSON for {subject}/{topic}. Raw response: {raw_text[:300]}"
-        )
+        ) from err
 
     return questions
 

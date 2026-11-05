@@ -15,10 +15,9 @@ Install (if not already present):
 """
 import pytest
 
-from app.guardrails.prompt_injection import check_for_prompt_injection, INJECTION_REFUSAL_MESSAGE
-from app.guardrails.pii_redaction import redact_pii, summarize_findings, PII_TYPE_LABELS
-from app.guardrails.anti_cheating import check_for_cheating_intent, build_socratic_instruction
-
+from app.guardrails.anti_cheating import build_socratic_instruction, check_for_cheating_intent
+from app.guardrails.pii_redaction import PII_TYPE_LABELS, redact_pii, summarize_findings
+from app.guardrails.prompt_injection import INJECTION_REFUSAL_MESSAGE, check_for_prompt_injection
 
 # ---------------------------------------------------------------------------
 # Prompt-injection guard

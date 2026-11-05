@@ -196,7 +196,7 @@ def train_model(df: pd.DataFrame):
 
     print("\n--- Feature importance ---")
     for feat, importance in sorted(
-        zip(feature_cols, model.feature_importances_), key=lambda x: -x[1]
+        zip(feature_cols, model.feature_importances_, strict=False), key=lambda x: -x[1]
     ):
         print(f"  {feat}: {importance:.3f}")
 

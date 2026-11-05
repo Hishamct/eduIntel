@@ -12,6 +12,7 @@ functions default every aggregate to 0/None rather than erroring on an
 empty table), so this also doubles as a regression check for that.
 """
 import uuid
+
 import pytest
 
 

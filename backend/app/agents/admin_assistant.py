@@ -8,6 +8,7 @@ from typing import TypedDict
 from google.genai import types
 from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from sqlalchemy import text
 
 from app.admin.service import (
     TenantAggregationBlockedError,
@@ -19,13 +20,12 @@ from app.admin.service import (
     get_timetable_coverage,
 )
 from app.core.database import AsyncSessionLocal  # adjust if named differently
-from app.core.tenant import normalize_institution_id
-from sqlalchemy import text
 from app.core.llm_client import (
     LLMCallUsage,
     decide_tools_with_usage,
     generate_text_with_usage,
 )
+from app.core.tenant import normalize_institution_id
 from app.guardrails.prompt_injection import (
     INJECTION_REFUSAL_MESSAGE,
     check_for_prompt_injection,
