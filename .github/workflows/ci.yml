@@ -119,10 +119,10 @@ jobs:
             GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO eduintel_app;
           "
 
-      - name: Run Pytest Test Suite
+      - name: Run Pytest Test Suite with Coverage Ratchet
         run: |
           cd backend
-          pytest
+          pytest --cov=app --cov-config=.coveragerc --cov-report=term-missing --cov-report=xml:coverage.xml --cov-fail-under=66
 
   frontend:
     name: Frontend Test Suite & Production Build
@@ -150,7 +150,7 @@ jobs:
 
       - name: Run Demo Mode Security Verification
         run: |
-          node frontend/tests/security/test_sec11_demo_mode_remediation.js
+          node frontend/tests/test_sec11_demo_mode_remediation.js
 
       - name: Verify Vite Production Build
         run: |

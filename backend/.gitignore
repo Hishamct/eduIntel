@@ -9,3 +9,8 @@ uploads/
 app/ml/models/
 mlflow.db
 mlruns/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.pytest_cache/
