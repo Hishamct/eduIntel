@@ -11,6 +11,7 @@ Phase 04 Test Harness:
 
 import os
 import re
+import socket
 import uuid
 
 import asyncpg
@@ -21,6 +22,66 @@ from sqlalchemy import select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
+
+# ==============================================================================
+# Multi-Tier Loopback-Aware Network Guard
+# ==============================================================================
+LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1", "0.0.0.0", "", None}
+
+_orig_getaddrinfo = socket.getaddrinfo
+_orig_connect = socket.socket.connect
+_orig_connect_ex = socket.socket.connect_ex
+
+
+def is_loopback_host(host: str | None) -> bool:
+    """Determines whether a host or address is an authorized local loopback endpoint."""
+    if not host or host in LOOPBACK_HOSTS:
+        return True
+    if isinstance(host, str) and (host.startswith("127.") or host.startswith("::1")):
+        return True
+    return False
+
+
+def guarded_getaddrinfo(host, port, *args, **kwargs):
+    """Intercepts outbound DNS lookups; fails closed if host is non-loopback."""
+    if host is not None and not is_loopback_host(host):
+        raise RuntimeError(
+            f"CRITICAL: Unmocked external network call detected during test execution! "
+            f"Blocked outbound DNS lookup for '{host}:{port}'"
+        )
+    return _orig_getaddrinfo(host, port, *args, **kwargs)
+
+
+def guarded_connect(self, address):
+    """Intercepts socket.connect; fails closed if target host is non-loopback."""
+    if isinstance(address, (str, bytes)):
+        return _orig_connect(self, address)
+    host = address[0] if isinstance(address, tuple) and len(address) > 0 else str(address)
+    if not is_loopback_host(host):
+        raise RuntimeError(
+            f"CRITICAL: Unmocked external network call detected during test execution! "
+            f"Blocked outbound socket connection to '{address}'"
+        )
+    return _orig_connect(self, address)
+
+
+def guarded_connect_ex(self, address):
+    """Intercepts socket.connect_ex; fails closed if target host is non-loopback."""
+    if isinstance(address, (str, bytes)):
+        return _orig_connect_ex(self, address)
+    host = address[0] if isinstance(address, tuple) and len(address) > 0 else str(address)
+    if not is_loopback_host(host):
+        raise RuntimeError(
+            f"CRITICAL: Unmocked external network call detected during test execution! "
+            f"Blocked outbound socket connection to '{address}'"
+        )
+    return _orig_connect_ex(self, address)
+
+
+# Activate socket-level loopback guard globally for test session
+socket.getaddrinfo = guarded_getaddrinfo
+socket.socket.connect = guarded_connect
+socket.socket.connect_ex = guarded_connect_ex
 
 # Establish testing mode environment variables early before application models bind
 os.environ.setdefault("ENVIRONMENT", "testing")
@@ -316,12 +377,81 @@ def auth_headers(token: str) -> dict:
 
 @pytest.fixture(autouse=True)
 def prevent_live_smtp_during_tests(monkeypatch):
-    """Globally intercepts all SMTP calls to prevent external dispatch."""
+    """Globally intercepts all SMTP calls to prevent external dispatch and records them in an in-memory sink."""
     from unittest.mock import MagicMock
-    mock_send = MagicMock(return_value={"status": "sent"})
+
+    outbox = []
+
+    def fake_send(to_email, subject, body, *args, **kwargs):
+        msg = {
+            "to_email": to_email,
+            "subject": subject,
+            "body": body,
+            "args": args,
+            "kwargs": kwargs,
+            "status": "sent",
+        }
+        outbox.append(msg)
+        return {"status": "sent"}
+
+    mock_send = MagicMock(side_effect=fake_send)
+    mock_send.outbox = outbox
     monkeypatch.setattr("app.auth.service.send_email_direct", mock_send)
     monkeypatch.setattr("app.reports.parent_report_agent.send_email_direct", mock_send)
     yield mock_send
+
+
+@pytest.fixture(autouse=True)
+def mock_gemini_llm(monkeypatch):
+    """Centralized deterministic mock for Google Gemini LLM API calls."""
+    from unittest.mock import MagicMock
+
+    from app.core import llm_client
+
+    mock_resp = MagicMock()
+    mock_resp.text = "Mocked AI response for testing."
+    mock_resp.usage_metadata = MagicMock(
+        prompt_token_count=15, candidates_token_count=25
+    )
+    mock_resp.candidates = [MagicMock(content=MagicMock(parts=[]))]
+
+    mock_generate = MagicMock(return_value=mock_resp)
+    monkeypatch.setattr(
+        llm_client._gemini_client.models, "generate_content", mock_generate
+    )
+    yield mock_generate
+
+
+@pytest.fixture(autouse=True)
+def mock_groq_llm(monkeypatch):
+    """Centralized deterministic mock for Groq LLM API fallback calls."""
+    from unittest.mock import MagicMock
+
+    from app.core import llm_client
+
+    mock_resp = MagicMock()
+    mock_resp.choices = [
+        MagicMock(message=MagicMock(content="Mocked Groq fallback response."))
+    ]
+    mock_resp.usage = MagicMock(prompt_tokens=15, completion_tokens=25)
+
+    mock_create = MagicMock(return_value=mock_resp)
+    monkeypatch.setattr(
+        llm_client._groq_client.chat.completions, "create", mock_create
+    )
+    yield mock_create
+
+
+@pytest.fixture(autouse=True)
+def mock_chroma_embeddings(monkeypatch):
+    """Centralized deterministic mock for ChromaDB vector embeddings (GeminiEmbeddingFunction)."""
+    from app.rag import client
+
+    def mock_embed(self, input):
+        return [[0.05] * 768 for _ in input]
+
+    monkeypatch.setattr(client.GeminiEmbeddingFunction, "__call__", mock_embed)
+    yield mock_embed
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -329,4 +459,5 @@ async def reset_app_engine_pool():
     """Teardown fixture that disposes pooled connections on global engine."""
     yield
     from app.core.database import engine
+
     await engine.dispose()
