@@ -75,14 +75,12 @@ async def lifespan(app: FastAPI):
     # Verify unprivileged database role on startup
     try:
         await verify_unprivileged_db_user()
-    except RuntimeError:
-        raise
     except Exception as exc:
         if settings.ENVIRONMENT == "production":
             raise RuntimeError(
-                f"FATAL: Database privilege check failed to execute in production: {exc}"
+                f"FATAL: Database privilege check failed in production: {exc}"
             ) from exc
-        print(f"[startup] Database privilege check skipped or deferred: {exc}")
+        print(f"[startup] WARNING: Database privilege check skipped in {settings.ENVIRONMENT} mode: {exc}")
     yield
 
 
