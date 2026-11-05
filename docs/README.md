@@ -30,7 +30,10 @@ docs/
 │   └── migrations.md                   # Alembic migration history (25 revisions) and reversibility
 ├── security/
 │   ├── auth-and-rbac.md                # JWT authentication, HttpOnly cookies, tenant-scoping & RBAC
-│   └── guardrails-and-pii.md           # PII redaction, prompt injection defense, audit logs & anti-cheating
+│   ├── authorization-matrix.md         # 66-endpoint authorization matrix & 58-test automated verification suite
+│   ├── guardrails-and-pii.md           # PII redaction, prompt injection defense, audit logs & anti-cheating
+│   ├── security-audit.md               # SEC-01 through SEC-19 vulnerability catalog & remediation tracker
+│   └── security-exceptions.md          # Approved SAST, SCA, and dependency vulnerability exception register
 ├── ai/
 │   ├── rag-architecture.md             # Dual vector collections, Gemini embeddings & Socratic flow
 │   ├── agents.md                       # LangGraph state machines, Admin Assistant & MCP server
@@ -39,9 +42,10 @@ docs/
 │   ├── local-setup.md                  # Local development installation, environment variables & Docker
 │   └── standards-and-workflow.md       # Git branching, commit conventions, code formatting & review rules
 ├── testing/
-│   └── testing-strategy.md             # Pytest harness (540 tests across 23 suites), Vitest frontend suites
+│   └── testing-strategy.md             # Pytest harness (608 tests), Vitest (19 tests), network guard & coverage ratchet
 ├── production-readiness/
-│   └── 12-phase-4-testing-and-ci-cd-plan.md # Authoritative Phase 4 plan, 7-step CI/CD roadmap & evidence
+│   ├── 12-phase-4-testing-and-ci-cd-plan.md   # Authoritative Phase 4 plan, 7-step CI/CD roadmap & evidence
+│   └── 13-phase-4-testing-and-ci-cd-report.md # Final Phase 4 closure report & certification (Phase 04 complete)
 ├── deployment/
 │   ├── docker-architecture.md          # Docker Compose configurations, volumes & networking
 │   └── deployment-topology.md          # Deployment topology: historical AWS, current local, proposed cloud
@@ -77,7 +81,8 @@ docs/
 - **[Authentication & RBAC](security/auth-and-rbac.md)**: Password hashing with bcrypt, JWT token issuance via `HttpOnly` cookies, dual-mode auth, `require_platform_admin` & `require_tenant_role` dependencies, and privilege escalation mitigations.
 - **[AI Guardrails & PII](security/guardrails-and-pii.md)**: Automated PII redaction engine (Aadhaar, phone, email, IP, credit cards), prompt injection defenses, and Socratic anti-cheating mechanisms.
 - **[Security Audit & Remediation Tracker](security/security-audit.md)**: Comprehensive vulnerability catalog and Phase 2B remediation tracker for SEC-01 through SEC-19.
-- **[Authorization Matrix](security/authorization-matrix.md)**: Complete endpoint-by-endpoint RBAC, institutional scoping, and multi-factor relational ownership matrix.
+- **[Authorization Matrix](security/authorization-matrix.md)**: Complete endpoint-by-endpoint RBAC, institutional scoping, multi-factor relational ownership matrix, and 58-test Grounded Authorization Matrix test suite.
+- **[Security Exceptions Register](security/security-exceptions.md)**: Formally approved SAST, SCA, and dependency vulnerability exception register with owners, rationale, and expiry cycles.
 - **[Phase 2B Security Closure Report](production-readiness/06-phase-2b-security-remediation-closure-report.md)**: Final signed-off closure report detailing the 10 remediated findings (SEC-01 through SEC-11).
 - **[Multi-Tenant Architecture](architecture/multi-tenant-architecture.md)**: Verified multi-tenant isolation specifications, membership model, and PostgreSQL RLS design.
 - **[Stage 3 Diff Review & Live RLS Validation](production-readiness/07-stage-3-diff-review-and-rls-validation-report.md)**: Independent diff review and empirical PostgreSQL 16 RLS engine validation report.
@@ -91,9 +96,10 @@ docs/
 
 ### 🛠️ 7. Engineering & DevOps
 - **[Local Development Setup](development/local-setup.md)**: Step-by-step developer onboarding, Docker configurations, virtual environment setup, and verification checks.
-- **[Engineering Standards](development/standards-and-workflow.md)**: Coding conventions, Git branching strategy, semantic versioning, and commit conventions.
-- **[Testing Strategy](testing/testing-strategy.md)**: Test execution instructions, pytest fixtures, unit/integration boundaries, savepoint isolation, and mocking protocols.
+- **[Engineering Standards](development/standards-and-workflow.md)**: Coding conventions, Git branching strategy, semantic versioning, CI quality gates (Lint, Security, Backend, Frontend), and commit conventions.
+- **[Testing Strategy](testing/testing-strategy.md)**: Test execution instructions, pytest fixtures, savepoint isolation, loopback network guard, coverage ratchet ($\ge 66\%$), and Vitest portal suites.
 - **[Phase 4 Testing Suite & CI/CD Implementation Plan](production-readiness/12-phase-4-testing-and-ci-cd-plan.md)**: Authoritative Phase 4 plan, 7-step incremental execution sequence, GitHub Actions CI workflow, and checkpoint verification evidence.
+- **[Phase 4 Testing Suite & CI/CD Closure Report](production-readiness/13-phase-4-testing-and-ci-cd-report.md)**: Final signed-off closure report certifying completion of Phase 04 across all 7 steps (Verdict: **CERTIFIED PRODUCTION READY**).
 - **[Docker Architecture](deployment/docker-architecture.md)**: Container topology, volume persistence, multi-stage build patterns, and environment variable isolation.
 - **[Deployment Topology](deployment/deployment-topology.md)**: Deployment topology (decommissioned AWS, current local development, proposed Phase 8 cloud architecture).
 - **[Backup & Recovery](operations/backup-and-recovery.md)**: Authenticated AES-256-GCM backup engine (`scripts/backup.sh`), 4-step quiescence, isolated Level 4 restore sandbox drill (`scripts/restore.sh`), and verified RTO/RPO metrics.

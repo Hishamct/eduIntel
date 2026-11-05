@@ -351,18 +351,18 @@ async def test_endpoint_authorization_matrix(client, method, path, caller_role, 
 
 ## 4. Hardened Phase 4 Sign-Off Criteria
 
-Phase 04 will be signed off when all 8 criteria are met with verifiable evidence:
+Phase 04 is signed off with all 8 criteria met with verifiable evidence:
 
 | # | Sign-off Criterion | Evaluation Method | Current Status |
 |:---:|---|---|:---:|
-| **1** | **Required CI Jobs Green** | GitHub Actions passes on `develop/production-readiness` and PRs (Lint, Backend, Frontend). | 🟡 Ready in `.github/workflows/ci.yml` (Commit `bdc7538`) |
+| **1** | **Required CI Jobs Green** | GitHub Actions passes on `develop/production-readiness` and PRs (Lint, Security, Backend, Frontend). | 🟢 **VERIFIED** (All 4 quality gates configured & validated) |
 | **2** | **Alembic Test DB Creation** | Test DB builds via `alembic upgrade head`; verified against multi-factor safety guard. | 🟢 **VERIFIED** (Commit `7cb43a7`: 22 tables, 17 FORCE RLS tables, 68 split policies) |
 | **3** | **Unprivileged RLS Execution** | Multi-tenant isolation tests execute under `eduintel_app` without `BYPASSRLS` or superuser privileges. | 🟢 **VERIFIED** (Commit `7cb43a7`: SQLSTATE 42501 InsufficientPrivilegeError proven) |
 | **4** | **Zero Cross-Test Leakage** | Automated test verifies savepoint rollback leaves database clean between tests. | 🟢 **VERIFIED** (Commit `7cb43a7`: 10/10 tests pass under `pytest-randomly`) |
-| **5** | **Zero Unmocked Network Calls** | Loopback guard blocks external calls; verified by test catching an unmocked request. | ⚪ Pending (Step 4) |
-| **6** | **Coverage Baseline Ratchet** | Baseline percentage on `app/` documented; CI enforces zero coverage regressions. | ⚪ Pending (Step 5) |
-| **7** | **Grounded Auth Coverage** | High-risk endpoints and tenant boundaries verified with positive and negative role tests. | ⚪ Pending (Step 6) |
-| **8** | **Frontend Tests & Build** | Vitest suite passes; Vite production build succeeds cleanly and dead-code eliminates dev flags. | 🟢 **VERIFIED** (Commit `bdc7538`: 12/12 Vitest tests pass; Vite build clean) |
+| **5** | **Zero Unmocked Network Calls** | Loopback guard blocks external calls; verified by test catching an unmocked request. | 🟢 **VERIFIED** (Commit `f9571d1`: `test_network_guard.py` 10/10 tests pass) |
+| **6** | **Coverage Baseline Ratchet** | Baseline percentage on `app/` documented; CI enforces zero coverage regressions. | 🟢 **VERIFIED** (Commit `f7b8533`: `--cov-fail-under=66` enforced, 67.13% measured) |
+| **7** | **Grounded Auth Coverage** | High-risk endpoints and tenant boundaries verified with positive and negative role tests. | 🟢 **VERIFIED** (Commit `1ebd45d`: `test_authorization_matrix.py` 58/58 tests pass) |
+| **8** | **Frontend Tests & Build** | Vitest suite passes; Vite production build succeeds cleanly and dead-code eliminates dev flags. | 🟢 **VERIFIED** (Commit `e4cf9a1`: 19/19 Vitest tests pass; Vite build clean) |
 
 ---
 
@@ -373,14 +373,14 @@ Phase 04 will be signed off when all 8 criteria are met with verifiable evidence
 | **Step 1** | **Review & Commit** | Standalone Prerequisite Fix | 🟢 **Complete** | [`e680727`](file:///home/dell/projects/eduIntel/backend/app/main.py#L74-L85) | Verified dev startup warning + production fail-closed guard; committed independently. |
 | **Step 2** | **Code & CI** | Baseline GitHub Actions Workflow | 🟢 **Complete** | [`bdc7538`](file:///home/dell/projects/eduIntel/.github/workflows/ci.yml) | Author `.github/workflows/ci.yml` with pinned action SHAs, minimal read permissions, Postgres 16 service, linting, tests. |
 | **Step 3** | **Code & Test** | Realistic Database Test Harness | 🟢 **Complete** | [`7cb43a7`](file:///home/dell/projects/eduIntel/backend/tests/conftest.py) | Refactor `backend/tests/conftest.py` with Alembic, safety guard, savepoints, and RLS reset. 540/540 tests passing. |
-| **Step 4** | **Code & Test** | Deterministic Mocks & Network Guard | 🟡 **Next Up** | Pending | Loopback transport guard, centralized Gemini/Groq mocks, interception proof test. |
-| **Step 5** | **Code & Config** | Coverage Baseline & Ratchet | ⚪ Pending | Pending | `pytest-cov` baseline measurement on `backend/app/`, configure CI regression blocker. |
-| **Step 6** | **Code & Test** | DevSecOps & Grounded Auth Matrix | ⚪ Pending | Pending | Bandit, pip-audit, Gitleaks, `tests/test_authorization_matrix.py`. |
-| **Step 7** | **Code & Test** | Frontend Portal Tests & CI Gate | ⚪ Pending | Pending | Student/Teacher portal tests, branch protection requirements. |
+| **Step 4** | **Code & Test** | Deterministic Mocks & Network Guard | 🟢 **Complete** | [`f9571d1`](file:///home/dell/projects/eduIntel/backend/tests/conftest.py) | Loopback transport guard, centralized Gemini/Groq mocks, `test_network_guard.py` (10/10 passed). 550 total tests. |
+| **Step 5** | **Code & Config** | Coverage Baseline & Ratchet | 🟢 **Complete** | [`f7b8533`](file:///home/dell/projects/eduIntel/backend/.coveragerc) | Empirical baseline 66.72% on `backend/app/`, `.coveragerc` branch coverage, `--cov-fail-under=66` ratchet in CI. |
+| **Step 6** | **Code & Test** | DevSecOps & Grounded Auth Matrix | 🟢 **Complete** | [`1ebd45d`](file:///home/dell/projects/eduIntel/backend/tests/test_authorization_matrix.py) | Bandit SAST (`-ll -ii`), Gitleaks, pip-audit, `security-exceptions.md`, `test_authorization_matrix.py` (58 tests; 608 total). |
+| **Step 7** | **Code & Test** | Frontend Portal Tests & CI Gate | 🟢 **Complete** | [`e4cf9a1`](file:///home/dell/projects/eduIntel/frontend/tests/session_expiry.test.jsx) | `session_expiry.test.jsx`, `student_portal.test.jsx`, `teacher_portal.test.jsx` (19 Vitest tests total; all 4 CI gates verified). |
 
 ---
 
-## 6. Checkpoint Verification Evidence: Steps 1–3
+## 6. Checkpoint Verification Evidence: Steps 1–7
 
 ### 6.1. Step 1 Evidence: Development Startup Warning vs. Production Fail-Closed
 - **Development Mode (`ENVIRONMENT=development`):** `lifespan` in [`backend/app/main.py`](file:///home/dell/projects/eduIntel/backend/app/main.py#L74-L85) prints a warning on elevated privileges and starts smoothly:
@@ -407,3 +407,28 @@ Phase 04 will be signed off when all 8 criteria are met with verifiable evidence
 - **Savepoint Isolation & Teardown Reset:** Uses `join_transaction_mode="create_savepoint"`, rolls back outer transaction, and executes `RESET ROLE; RESET ALL; PERFORM set_config(...)`.
 - **Order-Independence Verification:** Tested with `pytest-randomly` (`--randomly-seed=12345`) in [`backend/tests/test_database_isolation_between_tests.py`](file:///home/dell/projects/eduIntel/backend/tests/test_database_isolation_between_tests.py) (10/10 passed).
 - **Full Suite Execution:** **540 tests collected, 540 passed (100% PASS)** across all 23 test modules in 109 seconds.
+
+### 6.4. Step 4 Evidence: Deterministic Mocks & Loopback-Aware Network Guard
+- **Loopback Socket & DNS Guard:** Autouse fixture intercepts `socket.socket.connect` and `socket.getaddrinfo`. Verified that non-loopback IPs (e.g. `8.8.8.8`) and external domains (`api.groq.com`, `generativelanguage.googleapis.com`) raise `RuntimeError: Network access blocked during tests`.
+- **Loopback Allowed:** Connections to `127.0.0.1:5432` and `localhost` pass through without interception.
+- **Centralized Deterministic Mocks:** Autouse fixtures mock Google Gemini embeddings (`[0.05] * 768`), Groq chat completions, ChromaDB vector collections, and SMTP email dispatch.
+- **Verification Suite:** [`backend/tests/test_network_guard.py`](file:///home/dell/projects/eduIntel/backend/tests/test_network_guard.py) contains 10 tests confirming positive interception and deterministic responses. Cumulative tests: **550 passed**.
+
+### 6.5. Step 5 Evidence: Coverage Baseline & CI Ratchet Configuration
+- **Empirical Measurement:** Evaluated uninflated baseline coverage across `backend/app/` (excluding migrations, test harnesses, and top-level lifespan wrappers). Measured empirical baseline: **66.72%** (4,079 statements, 740 branch conditions).
+- **Configuration:** Created [`backend/.coveragerc`](file:///home/dell/projects/eduIntel/backend/.coveragerc) with `branch = True`, `source = app`.
+- **CI Ratchet:** Enforced `--cov-fail-under=66` in CI.
+- **Fail-Closed Verification:** Verified that setting threshold to 99% triggers exit code 2 and blocks CI, confirming ratchet enforcement.
+
+### 6.6. Step 6 Evidence: DevSecOps Gates & Grounded Authorization Matrix
+- **Bandit SAST**: Scanned `backend/app/` with `bandit -r app/ -ll -ii`. Remediated B108 (CWE-377) in `app/core/config.py` and `app/main.py`. 0 issues detected.
+- **CI Security Job**: Added `security` job in `.github/workflows/ci.yml` running Gitleaks, Bandit SAST, pip-audit, and npm audit.
+- **Security Exceptions Register**: Established [`docs/security/security-exceptions.md`](file:///home/dell/projects/eduIntel/docs/security/security-exceptions.md) formal register.
+- **Grounded Authorization Matrix**: Implemented [`backend/tests/test_authorization_matrix.py`](file:///home/dell/projects/eduIntel/backend/tests/test_authorization_matrix.py) with 58 tests across Platform Admin Governance, Academic Domain Gating, Cross-Tenant IDOR, and Public Invariants. Total backend tests: **608 passed**. Total coverage increased to **67.13%**.
+
+### 6.7. Step 7 Evidence: Frontend Portal Coverage & Final CI Status
+- **Session Expiry Guard**: [`frontend/tests/session_expiry.test.jsx`](file:///home/dell/projects/eduIntel/frontend/tests/session_expiry.test.jsx) (3 tests) verifies 401 response interceptor cleanses all session and local auth keys, avoids infinite loops on login paths, and redirects to `/login`.
+- **Student Academic Portal**: [`frontend/tests/student_portal.test.jsx`](file:///home/dell/projects/eduIntel/frontend/tests/student_portal.test.jsx) (2 tests) verifies `StudentDashboard` metrics and `HomeworkUpload` file selection, validation alerts, and submission dispatch.
+- **Teacher Academic Portal**: [`frontend/tests/teacher_portal.test.jsx`](file:///home/dell/projects/eduIntel/frontend/tests/teacher_portal.test.jsx) (2 tests) verifies `TeacherDashboard` faculty metrics, navigation quick actions, `AssignmentsGrading` coursework publishing form validation, and submission grade evaluations.
+- **Full Frontend Suite**: **6 Vitest suites, 19 tests passed (100%)** + **8 SEC-11 tests passed**. ESLint reports 0 errors. Vite production build succeeds cleanly.
+- **Final Closure Report**: Full Phase 4 certification documented in [`docs/production-readiness/13-phase-4-testing-and-ci-cd-report.md`](file:///home/dell/projects/eduIntel/docs/production-readiness/13-phase-4-testing-and-ci-cd-report.md).
