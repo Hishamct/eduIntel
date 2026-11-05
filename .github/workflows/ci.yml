@@ -33,7 +33,18 @@ jobs:
       - name: Lint Backend Python
         run: |
           cd backend
-          ruff check .
+          set -o pipefail
+          python -m ruff check . 2>&1 | tee ruff-output.txt
+
+      - name: Publish Ruff Summary
+        if: always()
+        run: |
+          if [ -f backend/ruff-output.txt ]; then
+            echo "### Ruff Lint Summary" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            cat backend/ruff-output.txt >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
 
       - name: Set up Node.js 20
         uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2
@@ -178,7 +189,18 @@ jobs:
           TEST_DATABASE_URL: postgresql+asyncpg://eduintel_app:eduintel_dev@localhost:5432/eduintel_test
         run: |
           cd backend
-          pytest --cov=app --cov-config=.coveragerc --cov-report=term-missing --cov-report=xml:coverage.xml --cov-fail-under=66
+          set -o pipefail
+          pytest --cov=app --cov-config=.coveragerc --cov-report=term-missing --cov-report=xml:coverage.xml --cov-fail-under=66 --tb=short -ra 2>&1 | tee pytest-output.txt
+
+      - name: Publish Pytest Summary
+        if: always()
+        run: |
+          if [ -f backend/pytest-output.txt ]; then
+            echo "### Pytest Execution Summary" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            tail -n 150 backend/pytest-output.txt >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
 
   frontend:
     name: Frontend Test Suite & Production Build
