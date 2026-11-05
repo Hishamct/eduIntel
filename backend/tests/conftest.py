@@ -168,6 +168,7 @@ def verify_and_prepare_test_database():
     import asyncio
 
     import alembic.config
+
     from alembic import command
 
     alembic_cfg = alembic.config.Config("alembic.ini")

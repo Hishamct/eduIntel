@@ -34,7 +34,7 @@ jobs:
         run: |
           cd backend
           set -o pipefail
-          python -m ruff check . 2>&1 | tee ruff-output.txt
+          python -m ruff check --output-format=github . 2>&1 | tee ruff-output.txt
 
       - name: Publish Ruff Summary
         if: always()
@@ -192,14 +192,16 @@ jobs:
           set -o pipefail
           pytest --cov=app --cov-config=.coveragerc --cov-report=term-missing --cov-report=xml:coverage.xml --cov-fail-under=66 --tb=short -ra 2>&1 | tee pytest-output.txt
 
-      - name: Publish Pytest Summary
+      - name: Annotate Pytest Results
         if: always()
         run: |
           if [ -f backend/pytest-output.txt ]; then
-            echo "### Pytest Execution Summary" >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
-            tail -n 150 backend/pytest-output.txt >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
+            grep "^FAILED " backend/pytest-output.txt | while IFS= read -r line; do
+              echo "::error title=Pytest Failure::$line"
+            done
+            grep "FAIL-UNDER" backend/pytest-output.txt | while IFS= read -r line; do
+              echo "::error title=Coverage Ratchet Failure::$line"
+            done
           fi
 
   frontend:
