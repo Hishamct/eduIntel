@@ -54,7 +54,7 @@ def guarded_getaddrinfo(host, port, *args, **kwargs):
 
 def guarded_connect(self, address):
     """Intercepts socket.connect; fails closed if target host is non-loopback."""
-    if isinstance(address, (str, bytes)):
+    if isinstance(address, str | bytes):
         return _orig_connect(self, address)
     host = address[0] if isinstance(address, tuple) and len(address) > 0 else str(address)
     if not is_loopback_host(host):
@@ -67,7 +67,7 @@ def guarded_connect(self, address):
 
 def guarded_connect_ex(self, address):
     """Intercepts socket.connect_ex; fails closed if target host is non-loopback."""
-    if isinstance(address, (str, bytes)):
+    if isinstance(address, str | bytes):
         return _orig_connect_ex(self, address)
     host = address[0] if isinstance(address, tuple) and len(address) > 0 else str(address)
     if not is_loopback_host(host):
@@ -168,7 +168,6 @@ def verify_and_prepare_test_database():
     import asyncio
 
     import alembic.config
-
     from alembic import command
 
     alembic_cfg = alembic.config.Config("alembic.ini")

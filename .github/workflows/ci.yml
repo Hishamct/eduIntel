@@ -28,7 +28,7 @@ jobs:
           cache: 'pip'
 
       - name: Install Ruff
-        run: pip install ruff==0.9.10
+        run: pip install ruff==0.16.8
 
       - name: Lint Backend Python
         run: |
@@ -173,6 +173,9 @@ jobs:
           "
 
       - name: Run Pytest Test Suite with Coverage Ratchet
+        env:
+          DATABASE_URL: postgresql+asyncpg://eduintel_app:eduintel_dev@localhost:5432/eduintel_test
+          TEST_DATABASE_URL: postgresql+asyncpg://eduintel_app:eduintel_dev@localhost:5432/eduintel_test
         run: |
           cd backend
           pytest --cov=app --cov-config=.coveragerc --cov-report=term-missing --cov-report=xml:coverage.xml --cov-fail-under=66

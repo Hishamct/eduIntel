@@ -181,7 +181,7 @@ async def get_tenant_context(
     except (OSError, Exception) as db_err:
         if settings.ENVIRONMENT != "production" and isinstance(db_err, OSError):
             active_memberships = []
-        elif isinstance(db_err, (TypeError, ValueError)):
+        elif isinstance(db_err, TypeError | ValueError):
             active_memberships = []
         else:
             raise
