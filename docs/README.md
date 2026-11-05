@@ -39,7 +39,9 @@ docs/
 │   ├── local-setup.md                  # Local development installation, environment variables & Docker
 │   └── standards-and-workflow.md       # Git branching, commit conventions, code formatting & review rules
 ├── testing/
-│   └── testing-strategy.md             # Pytest harness (530 tests across 22 suites), Vitest frontend suites
+│   └── testing-strategy.md             # Pytest harness (540 tests across 23 suites), Vitest frontend suites
+├── production-readiness/
+│   └── 12-phase-4-testing-and-ci-cd-plan.md # Authoritative Phase 4 plan, 7-step CI/CD roadmap & evidence
 ├── deployment/
 │   ├── docker-architecture.md          # Docker Compose configurations, volumes & networking
 │   └── deployment-topology.md          # Deployment topology: historical AWS, current local, proposed cloud
@@ -90,7 +92,8 @@ docs/
 ### 🛠️ 7. Engineering & DevOps
 - **[Local Development Setup](development/local-setup.md)**: Step-by-step developer onboarding, Docker configurations, virtual environment setup, and verification checks.
 - **[Engineering Standards](development/standards-and-workflow.md)**: Coding conventions, Git branching strategy, semantic versioning, and commit conventions.
-- **[Testing Strategy](testing/testing-strategy.md)**: Test execution instructions, pytest fixtures, unit/integration boundaries, and mocking protocols.
+- **[Testing Strategy](testing/testing-strategy.md)**: Test execution instructions, pytest fixtures, unit/integration boundaries, savepoint isolation, and mocking protocols.
+- **[Phase 4 Testing Suite & CI/CD Implementation Plan](production-readiness/12-phase-4-testing-and-ci-cd-plan.md)**: Authoritative Phase 4 plan, 7-step incremental execution sequence, GitHub Actions CI workflow, and checkpoint verification evidence.
 - **[Docker Architecture](deployment/docker-architecture.md)**: Container topology, volume persistence, multi-stage build patterns, and environment variable isolation.
 - **[Deployment Topology](deployment/deployment-topology.md)**: Deployment topology (decommissioned AWS, current local development, proposed Phase 8 cloud architecture).
 - **[Backup & Recovery](operations/backup-and-recovery.md)**: Authenticated AES-256-GCM backup engine (`scripts/backup.sh`), 4-step quiescence, isolated Level 4 restore sandbox drill (`scripts/restore.sh`), and verified RTO/RPO metrics.

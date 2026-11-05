@@ -94,9 +94,13 @@ test(rag): add pytest suite for recursive chunking overlap
 
 Before any pull request is merged into `develop/production-readiness`:
 
-1. **No Application Regression**: All existing unit and integration tests pass cleanly via `pytest`.
-2. **Zero Hardcoded Secrets**: Scanned to confirm no passwords, JWT secret keys, Gemini API tokens, or AWS credentials exist in commit diffs.
-3. **Database Migration Safety**: If models were updated, a valid Alembic migration is included with tested `upgrade()` and `downgrade()` methods.
-4. **Documentation Updated**: Relevant markdown documents under `docs/` (e.g. `route-inventory.md`, `feature-matrix.md`) are updated to reflect the new state.
-5. **Architectural Review**: Confirms that module boundary integrity is preserved (no cyclic dependencies, no unauthorized cross-module database writes).
+1. **Automated CI Checks Passing**: All jobs in [`.github/workflows/ci.yml`](file:///home/dell/projects/eduIntel/.github/workflows/ci.yml) pass cleanly:
+   - **`lint`**: Backend `ruff check .` (0 errors) and frontend `npm run lint` (0 errors).
+   - **`backend`**: PostgreSQL 16 service, unprivileged `eduintel_app` role provisioning, `alembic upgrade head`, and 540/540 pytest suite pass.
+   - **`frontend`**: Vitest suites pass, demo mode security audit passes, and `vite build` completes successfully.
+2. **Zero Application Regression**: All existing unit and integration tests pass cleanly via `pytest` with zero state residue across tests.
+3. **Zero Hardcoded Secrets**: Scanned to confirm no passwords, JWT secret keys, Gemini API tokens, or cloud credentials exist in commit diffs.
+4. **Database Migration Safety**: If models were updated, a valid Alembic migration is included with tested `upgrade()` and `downgrade()` methods.
+5. **Documentation Updated**: Relevant markdown documents under `docs/` (e.g. `route-inventory.md`, `feature-matrix.md`, `testing-strategy.md`) are updated to reflect the new state.
+6. **Architectural Review**: Confirms that module boundary integrity is preserved (no cyclic dependencies, no unauthorized cross-module database writes, no bypass of tenant context).
 

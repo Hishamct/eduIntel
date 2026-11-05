@@ -84,14 +84,17 @@ pip install -r requirements.txt
 ```
 
 ### Step 3: Run Database Migrations
-Apply all 23 Alembic migrations (revisions 0001 through 0023) to construct the database schema:
+Apply all 25 Alembic migrations (revisions 0001 through 0025) to construct the database schema:
 ```bash
 alembic upgrade head
 
 # Verify active revision reaches head
 alembic current
-# Expected: a7c8e9d0b1f2 (head)
+# Expected: c9e0f2a1b3c4 (head)
 ```
+
+> [!NOTE]
+> **Role Privilege Startup Check:** On startup, `verify_unprivileged_db_user()` inspects the active database connection. In `development` mode, if the local role has superuser or createdb privileges, a descriptive warning is logged without aborting startup. In `production` mode, the check remains strictly fail-closed to guarantee that Row-Level Security cannot be bypassed.
 
 To verify bidirectional migration reversibility in an isolated ephemeral database:
 ```bash
@@ -152,10 +155,9 @@ Run through these checks to ensure your local installation is fully functional:
 - [ ] Login screen opens at `http://localhost:5173/login`.
 - [ ] Tests run successfully:
   ```bash
-  cd backend && pytest tests/ -q
-  # Expected: 334 passed
-  ```
-  ./venv/bin/pytest -v
+  cd backend
+  pytest tests/ -v
+  # Expected: 540 passed (100% PASS across 23 test suites)
   ```
 
 ---

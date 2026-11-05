@@ -26,19 +26,24 @@ flowchart TD
 
 ## 2. Test Configuration & Harness
 
-- **Test Runner**: Pytest 9.1+ with `pytest-asyncio 1.4+`.
+- **Test Runner**: Pytest 9.1+ with `pytest-asyncio 1.4+` and `pytest-randomly 3.16+`.
 - **Configuration File**: [`backend/pytest.ini`](file:///home/dell/projects/eduIntel/backend/pytest.ini).
 - **Core Fixture Harness**: [`backend/tests/conftest.py`](file:///home/dell/projects/eduIntel/backend/tests/conftest.py):
-  - `async_client`: FastAPI `AsyncClient` bound to the application for testing HTTP requests.
-  - `mock_db_session`: Async database session rollback fixture to prevent test pollution.
-  - `admin_token`, `teacher_token`, `student_token`: Pre-generated valid JWT tokens with test claims.
-  - `mock_gemini_client`: Mocked LLM responses for deterministic agent and RAG evaluations.
+  - **Fail-Closed Safety Guard (`assert_safe_test_database`)**: Multi-factor URL verification enforcing test-mode flags (`ENVIRONMENT='testing'`, `EDUINTEL_TEST_MODE='true'`), loopback host (`localhost`/`127.0.0.1`), standard port 5432, zero rogue query parameters, prohibited protected database names, and strict regex allowlisting (`^eduintel_test(_[a-zA-Z0-9_-]+)?$`).
+  - **Dynamic Alembic Migration & Schema Assertion (`verify_and_prepare_test_database`)**: Runs `alembic upgrade head` dynamically and asserts schema integrity (22 tables, 17 `FORCE ROW LEVEL SECURITY` tables, 68 split policies, and unprivileged application role).
+  - **Savepoint Transaction Isolation (`db_connection`)**: Executes tests inside nested savepoints (`join_transaction_mode="create_savepoint"`). Route and service commits release savepoints rather than committing the outer transaction. Teardown unconditionally rolls back the outer transaction.
+  - **Resilient Session Teardown Reset**: Cleanses connection state after every test: `RESET ROLE; RESET ALL; PERFORM set_config('app.current_institution_id', '', false); PERFORM set_config('app.is_platform_admin', '', false);`.
+  - **Unprivileged Role Execution**: Connects under `eduintel_app` (`NOSUPERUSER, NOBYPASSRLS`) so PostgreSQL RLS policies cannot be bypassed.
+  - `client`: FastAPI `AsyncClient` via `ASGITransport` wired to the savepoint transaction session.
+  - `admin_token`, `teacher_token`, `student_token`: Pre-provisioned user tokens scoped to transaction savepoints.
+  - `prevent_live_smtp_during_tests`: Autouse global mock intercepting SMTP dispatch.
+  - `reset_app_engine_pool`: Autouse teardown disposing pooled connections across event loop lifecycles.
 
 ---
 
-## 3. Current Backend Test Inventory (530 Automated Tests)
+## 3. Current Backend Test Inventory (540 Automated Tests)
 
-The test suite in [`backend/tests/`](file:///home/dell/projects/eduIntel/backend/tests/) contains **530 collected tests across 22 test modules**, with a **100% pass rate**:
+The test suite in [`backend/tests/`](file:///home/dell/projects/eduIntel/backend/tests/) contains **540 collected tests across 23 test modules**, with a **100% pass rate**:
 
 ### 3.1. Phase 2B Security & Containment Suites (11 Modules — 249 Tests)
 1. **`test_admin_assistant_security.py`** (17 tests): Parameter validation, regex SQL containment, extra field forbidden.
@@ -71,10 +76,11 @@ The test suite in [`backend/tests/`](file:///home/dell/projects/eduIntel/backend
     - **Operational Suspension**: Verifies `PATCH /institutions/{id}/status` suspends institutions, blocking single-tenant members while preserving multi-tenant users' access to other active institutes.
     - **Database RLS Read-Write Isolation (SEC-03)**: Verifies Platform Admin cross-tenant `SELECT` queries succeed with `app.is_platform_admin = 'true'`, while cross-tenant `INSERT`, `UPDATE`, and `DELETE` queries are denied by PostgreSQL with SQLSTATE `42501` (`insufficient_privilege`).
 
-### 3.4. Database Integrity & Core Authentication Suites (3 Modules — 182 Tests)
+### 3.4. Database Integrity, Core Authentication & Isolation Suites (4 Modules — 192 Tests)
 20. **`test_database_pooling.py`** (6 tests): Pool settings validation (`pool_size=10, max_overflow=5, timeout=30, recycle=1800, pre_ping=True, echo=False`), queue pool starvation handling, and connection reset verification.
 21. **`test_auth_rbac.py`**: End-to-end authentication, password hashing, role transitions, and profile resolution.
 22. **`test_observability.py`**: Metrics endpoints, cost aggregation, and trace instrumentation.
+23. **`test_database_isolation_between_tests.py`** (10 tests, Phase 4): Fail-closed safety guard enforcement, unprivileged role RLS blocking (SQLSTATE 42501), clean session GUC verification, and savepoint rollback isolation tested under forward, reverse, and randomized orders via `pytest-randomly`.
 
 ---
 
@@ -86,11 +92,11 @@ cd backend && pytest tests/ -v
 ```
 
 ### Verified Results:
-- **Total Tests Collected**: 530
-- **Passed**: 530 (100% PASS)
+- **Total Tests Collected**: 540
+- **Passed**: 540 (100% PASS)
 - **Failed**: 0
 - **Errors**: 0
-- **Duration**: ~97 seconds
+- **Duration**: ~109 seconds
 - **Code Quality**: `ruff check` reports 0 errors across all backend source and test files.
 
 ---
@@ -126,17 +132,31 @@ Following the security audit remediation (SEC-05), a dedicated frontend test fra
 
 ## 6. Test Execution Instructions & Test Database Isolation
 
-### 6.1. Test Database Requirement
-Tests that require database transactions (`test_auth_rbac.py`, `test_observability.py`, `test_platform_admin.py`) instantiate an async test engine using `TEST_DATABASE_URL`:
+### 6.1. Test Database Safety & Unprivileged Execution
+Integration and RLS tests execute against a dedicated, isolated test database (`eduintel_test`) under the unprivileged PostgreSQL role `eduintel_app` (`NOSUPERUSER, NOBYPASSRLS`):
 ```bash
-TEST_DATABASE_URL="postgresql+asyncpg://eduintel:eduintel_dev@localhost:5432/eduintel_test"
+TEST_DATABASE_URL="postgresql+asyncpg://eduintel_app:eduintel_dev@localhost:5432/eduintel_test"
 ```
 > [!IMPORTANT]
-> The test fixture [`test_engine`](file:///home/dell/projects/eduIntel/backend/tests/conftest.py) executes `Base.metadata.create_all` and `Base.metadata.drop_all` around each test execution. Therefore, `TEST_DATABASE_URL` must point to an isolated database (e.g. `eduintel_test`), never to the primary development or production database `eduintel`.
-> To initialize the test database locally:
-> ```bash
-> docker exec -it eduintel-postgres psql -U eduintel -d eduintel -c "CREATE DATABASE eduintel_test;"
-> ```
+> **Production Safety Invariants (`assert_safe_test_database`):**
+> 1. Requires `ENVIRONMENT='testing'` and `EDUINTEL_TEST_MODE='true'`.
+> 2. Prohibits non-loopback hosts and non-standard ports.
+> 3. Forbids protected database names (`eduintel`, `postgres`, `production`, `staging`).
+> 4. Test schema is constructed dynamically via **`alembic upgrade head`** rather than `Base.metadata.create_all`, ensuring tests exercise real PostgreSQL RLS policies, composite indexes, and triggers.
+> 5. Tests use **savepoint transaction isolation** (`join_transaction_mode="create_savepoint"`). Mutations are rolled back at the connection level, and connection state is cleansed via `RESET ROLE; RESET ALL; PERFORM set_config(...)` between tests, avoiding destructive table recreation.
+
+To provision the test database and unprivileged application role locally:
+```bash
+docker exec -it eduintel-postgres psql -U eduintel -d eduintel -c "
+  CREATE DATABASE eduintel_test;
+  DO \$\$ BEGIN
+    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'eduintel_app') THEN
+      CREATE ROLE eduintel_app WITH LOGIN PASSWORD 'eduintel_dev' NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE;
+    END IF;
+  END \$\$;
+  GRANT USAGE ON SCHEMA public TO eduintel_app;
+"
+```
 
 ### 6.2. Running the Test Suites
 
@@ -146,8 +166,11 @@ cd backend
 source venv/bin/activate
 set -a && source .env && set +a
 
-# Run full suite including database integration tests
+# Run full suite with realistic Alembic harness and savepoint isolation (540 tests)
 pytest tests/ -v
+
+# Run with randomized test ordering to verify order-independence
+pytest tests/ -v --randomly-seed=12345
 ```
 
 #### Frontend Test Suites (Vitest & Node)
@@ -163,11 +186,16 @@ node --test tests/test_sec11_demo_mode_remediation.js
 
 ---
 
-## 7. Coverage Gaps & Phase 4 Roadmap
+## 7. Automated CI Pipeline & Phase 4 Roadmap Status
 
-While current tests cover security, guardrails, and authentication thoroughly, Phase 4 (Testing Infrastructure & CI/CD) is scheduled to address the following gaps:
+### 7.1. Automated GitHub Actions CI Pipeline (Implemented in Step 2)
+The CI pipeline in [`.github/workflows/ci.yml`](file:///home/dell/projects/eduIntel/.github/workflows/ci.yml) enforces quality gates on all pushes and PRs:
+1. **Code Quality & Linting (`lint`)**: Runs `ruff check .` on backend and `npm run lint` (ESLint) on frontend.
+2. **Backend Test Suite (`backend`)**: Launches a dedicated `postgres:16` service container, provisions `eduintel_app`, runs `alembic upgrade head`, and executes `pytest` across all 23 suites.
+3. **Frontend Test Suite & Build (`frontend`)**: Executes Vitest component suites, Node.js demo mode security audit, and verifies `vite build` production compilation.
 
-1. **Portal End-to-End Route Tests**: Add pytest suites covering complete CRUD workflows for timetable creation, assignment grading, and fee payments.
-2. **ChromaDB Vector Mocking**: Add dedicated unit tests for the chunking and embedding retrieval logic with a mocked ChromaDB in-memory client.
-3. **ML Inference Pipeline Tests**: Add regression tests verifying that `at_risk_model.json` and `weak_topics_model.json` produce valid predictions when given edge-case feature inputs (e.g. 0% attendance, NaN features).
-4. **Automated CI Pipeline**: Configure GitHub Actions to execute `ruff check` and `pytest --cov=app` on every pull request.
+### 7.2. Remaining Phase 4 Workstream Steps
+1. **Step 4: Deterministic Mocks & Network Guard**: Centralize Gemini/Groq mocks and enforce fail-closed loopback guard intercepting unauthorized outbound calls.
+2. **Step 5: Coverage Baseline & Ratchet**: Establish empirical coverage floor on `backend/app/` using `pytest-cov` and block regressions.
+3. **Step 6: DevSecOps Gates & Grounded Auth Matrix**: Integrate Bandit (`-ll -ii`), pip-audit, and Gitleaks with a security exceptions register; build grounded authorization matrix.
+4. **Step 7: Frontend Portal Coverage**: Author Vitest/RTL tests for student and teacher portal views and enforce required branch protection status checks.
