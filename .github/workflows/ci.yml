@@ -36,7 +36,7 @@ jobs:
           ruff check .
 
       - name: Set up Node.js 20
-        uses: actions/setup-node@60edb5dd545a775178f525247059d6428249fa18 # v4.0.2
+        uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2
         with:
           node-version: 20
           cache: 'npm'
@@ -58,7 +58,7 @@ jobs:
           fetch-depth: 0
 
       - name: Run Gitleaks Secret Scanner
-        uses: gitleaks/gitleaks-action@7ad35024f0be052ae5ec53773566342fb5385641 # v2.3.9
+        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -82,7 +82,7 @@ jobs:
           pip-audit -r requirements.txt || echo "::warning::Known dependency advisories detected; review docs/security/security-exceptions.md"
 
       - name: Set up Node.js 20
-        uses: actions/setup-node@60edb5dd545a775178f525247059d6428249fa18 # v4.0.2
+        uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2
         with:
           node-version: 20
           cache: 'npm'
@@ -121,6 +121,14 @@ jobs:
       JWT_ALGORITHM: HS256
       ACCESS_TOKEN_EXPIRE_MINUTES: 30
       FRONTEND_BASE_URL: http://localhost:5173
+      GEMINI_API_KEY: test-ci-dummy-gemini-key
+      GROQ_API_KEY: test-ci-dummy-groq-key
+      SMTP_HOST: smtp.testserver.local
+      SMTP_PORT: 587
+      SMTP_USER: test@eduintel.local
+      SMTP_PASSWORD: test-ci-smtp-password
+      EMAIL_FROM: noreply@eduintel.local
+      PYTHONPATH: backend
 
     steps:
       - name: Checkout Code
@@ -177,7 +185,7 @@ jobs:
         uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
 
       - name: Set up Node.js 20
-        uses: actions/setup-node@60edb5dd545a775178f525247059d6428249fa18 # v4.0.2
+        uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2
         with:
           node-version: 20
           cache: 'npm'
@@ -193,12 +201,12 @@ jobs:
           cd frontend
           npm run test
 
-      - name: Run Demo Mode Security Verification
-        run: |
-          node frontend/tests/test_sec11_demo_mode_remediation.js
-
       - name: Verify Vite Production Build
         run: |
           cd frontend
           npm run build
+
+      - name: Run Demo Mode Security Verification
+        run: |
+          node frontend/tests/test_sec11_demo_mode_remediation.js
 
