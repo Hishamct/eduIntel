@@ -89,8 +89,8 @@ app = FastAPI(title="EduIntel AI", lifespan=lifespan)
 
 def is_maintenance_mode() -> bool:
     """Checks whether system-wide quiescence / maintenance mode is active."""
-    flag_path = getattr(settings, "MAINTENANCE_FLAG_PATH", "/tmp/eduintel_maintenance.flag")
-    return os.path.exists(flag_path)
+    flag_path = getattr(settings, "MAINTENANCE_FLAG_PATH", None)
+    return bool(flag_path and os.path.exists(flag_path))
 
 
 @app.middleware("http")

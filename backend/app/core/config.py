@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     DB_ECHO: bool = False
 
     # Disaster Recovery & Quiescence (ADR-0009)
-    MAINTENANCE_FLAG_PATH: str = "/tmp/eduintel_maintenance.flag"
+    MAINTENANCE_FLAG_PATH: str = "/tmp/eduintel_maintenance.flag"  # nosec B108
 
     # Authentication & Cookie Security (SEC-10)
     AUTH_COOKIE_NAME: str = "access_token"

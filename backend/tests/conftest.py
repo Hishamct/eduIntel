@@ -284,7 +284,12 @@ async def client(db_connection):
     app.dependency_overrides.clear()
 
 
-async def _provision_user(db_connection, role: str) -> str:
+async def _provision_user(
+    db_connection,
+    role: str,
+    is_platform_admin: bool = False,
+    institution_id: uuid.UUID | None = None,
+) -> str:
     """
     Provisions a throwaway test user and profile inside the active savepoint.
     Sets transaction-local tenant context so RLS permits profile creation.
@@ -298,7 +303,7 @@ async def _provision_user(db_connection, role: str) -> str:
         expire_on_commit=False,
         join_transaction_mode="create_savepoint",
     )
-    inst_id = uuid.UUID("00000000-0000-0000-0000-000000000001")
+    inst_id = institution_id or uuid.UUID("00000000-0000-0000-0000-000000000001")
 
     # Set institution context so RLS policies allow insertion
     await session.execute(
@@ -310,8 +315,8 @@ async def _provision_user(db_connection, role: str) -> str:
     if not inst:
         inst = Institution(
             id=inst_id,
-            name="Default Test Institution",
-            slug="test-inst",
+            name=f"Test Institution {inst_id.hex[:6]}",
+            slug=f"test-inst-{inst_id.hex[:6]}",
             is_active=True,
         )
         session.add(inst)
@@ -323,7 +328,7 @@ async def _provision_user(db_connection, role: str) -> str:
         hashed_password=hash_password(password),
         role=role,
         is_active=True,
-        is_platform_admin=False,
+        is_platform_admin=is_platform_admin,
     )
     session.add(user)
     await session.flush()
@@ -354,6 +359,11 @@ async def _provision_user(db_connection, role: str) -> str:
     await session.commit()
     await session.close()
     return create_access_token({"sub": str(user.id), "role": role})
+
+
+@pytest_asyncio.fixture
+async def platform_admin_token(db_connection) -> str:
+    return await _provision_user(db_connection, "admin", is_platform_admin=True)
 
 
 @pytest_asyncio.fixture

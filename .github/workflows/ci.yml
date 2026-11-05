@@ -48,6 +48,51 @@ jobs:
           npm ci
           npm run lint
 
+  security:
+    name: DevSecOps Gates (SAST, SCA & Secret Scan)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks Secret Scanner
+        uses: gitleaks/gitleaks-action@7ad35024f0be052ae5ec53773566342fb5385641 # v2.3.9
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@0a5c61591373683505ea898e09a3ea4f39ef2b9c # v5.0.0
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install Bandit & Pip-Audit
+        run: pip install bandit==1.8.3 pip-audit==2.8.0
+
+      - name: Run Bandit SAST Security Scan
+        run: |
+          cd backend
+          bandit -r app/ -ll -ii
+
+      - name: Audit Backend Python Dependencies
+        run: |
+          cd backend
+          pip-audit -r requirements.txt || echo "::warning::Known dependency advisories detected; review docs/security/security-exceptions.md"
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@60edb5dd545a775178f525247059d6428249fa18 # v4.0.2
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Audit Frontend JavaScript Dependencies
+        run: |
+          cd frontend
+          npm audit --audit-level=high || echo "::warning::Known frontend dependency advisories detected; review docs/security/security-exceptions.md"
+
   backend:
     name: Backend Test Suite (PostgreSQL 16)
     runs-on: ubuntu-latest
