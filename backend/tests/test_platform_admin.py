@@ -8,6 +8,7 @@ Automated Security and Integration Test Suite for Platform Admin Workstream:
 4. Multi-Institution Suspension & Tenant Isolation Semantics
 """
 
+import os
 import sys
 import uuid
 from pathlib import Path
@@ -191,7 +192,12 @@ class TestReadOnlyCrossTenantRLSPolicy:
 
     @pytest.mark.asyncio
     async def test_cross_tenant_write_rejected_by_rls_with_check(self):
-        conn = await asyncpg.connect("postgresql://eduintel:eduintel_dev@localhost:5432/eduintel")
+        test_url = (
+            os.getenv("TEST_DATABASE_URL", "postgresql://eduintel:eduintel_dev@localhost:5432/eduintel_test")
+            .replace("postgresql+asyncpg://", "postgresql://")
+            .replace("eduintel_app:", "eduintel:")
+        )
+        conn = await asyncpg.connect(test_url)
 
         # 1. Provision unprivileged application role eduintel_app (NOSUPERUSER, NOBYPASSRLS)
         await conn.execute("""
@@ -320,7 +326,12 @@ class TestReadOnlyCrossTenantRLSPolicy:
     @pytest.mark.asyncio
     async def test_ordinary_tenant_isolation_under_split_policies(self):
         """Verifies ordinary non-admin users cannot read or delete foreign tenant rows."""
-        conn = await asyncpg.connect("postgresql://eduintel:eduintel_dev@localhost:5432/eduintel")
+        test_url = (
+            os.getenv("TEST_DATABASE_URL", "postgresql://eduintel:eduintel_dev@localhost:5432/eduintel_test")
+            .replace("postgresql+asyncpg://", "postgresql://")
+            .replace("eduintel_app:", "eduintel:")
+        )
+        conn = await asyncpg.connect(test_url)
         async with conn.transaction():
             inst_a = uuid.uuid4()
             inst_b = uuid.uuid4()

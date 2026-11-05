@@ -1,79 +1,322 @@
 """
-tests/conftest.py
+backend/tests/conftest.py
 
-Shared pytest fixtures: a dedicated test Postgres database (created fresh
-and torn down per test session) and an httpx AsyncClient wired to your
-FastAPI app, plus helper fixtures that sign up + log in throwaway test
-users for each role.
-
-*** THINGS YOU MUST ADJUST BEFORE THIS RUNS — clearly marked below ***
-I don't have visibility into your actual signup endpoint's exact field
-names (I only confirmed login is POST /auth/login with {email, password}),
-so the signup payload below is my best guess at a typical FastAPI signup
-shape and is marked for you to correct. Everything else (test DB setup,
-client fixtures, role fixtures) should work as-is.
-
-Setup:
-    1. Create a separate test database in your existing Postgres container:
-         docker exec -it <your_postgres_container> psql -U eduintel -c "CREATE DATABASE eduintel_test;"
-    2. Set TEST_DATABASE_URL as an env var before running pytest, e.g.:
-         export TEST_DATABASE_URL="postgresql+asyncpg://eduintel:<password>@localhost:5432/eduintel_test"
-       (adjust user/password/port to match your actual docker-compose config —
-       same credentials as your regular DATABASE_URL, just a different db name)
-    3. pip install pytest pytest-asyncio httpx --break-system-packages
-    4. Run: pytest tests/ -v
+Phase 04 Test Harness:
+1. Strict multi-factor test database safety verification (host, port, DB name allowlist, params).
+2. Realistic PostgreSQL 16 schema powered by dynamic Alembic upgrade verification.
+3. Live Row-Level Security assertion (17 FORCE RLS tables, 68 split policies, unprivileged eduintel_app).
+4. Savepoint transaction isolation (join_transaction_mode="create_savepoint") eliminating cross-test state leaks.
+5. Resilient teardown session state cleanup traps (RESET ROLE, RESET ALL, GUC nullification).
 """
+
 import os
+import re
 import uuid
 
+import asyncpg
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy import select, text
+from sqlalchemy.engine import make_url
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
 
-# --- ADJUST THIS IMPORT if your FastAPI app instance or Base live elsewhere ---
+# Establish testing mode environment variables early before application models bind
+os.environ.setdefault("ENVIRONMENT", "testing")
+os.environ.setdefault("EDUINTEL_TEST_MODE", "true")
+os.environ.setdefault(
+    "TEST_DATABASE_URL",
+    "postgresql+asyncpg://eduintel_app:eduintel_dev@localhost:5432/eduintel_test",
+)
+os.environ["DATABASE_URL"] = os.environ["TEST_DATABASE_URL"]
+
 from app.auth.security import create_access_token, hash_password
-from app.core.database import Base, get_db
+from app.core.database import get_db
+from app.institutions.models import Institution, InstitutionMembership
 from app.main import app
 from app.users.models import AdminProfile, StudentProfile, TeacherProfile, User
 
-TEST_DATABASE_URL = os.environ.get(
-    "TEST_DATABASE_URL",
-    "postgresql+asyncpg://eduintel:eduintel_dev@localhost:5432/eduintel_test",
-)
+TEST_DATABASE_URL = os.environ["TEST_DATABASE_URL"]
+
+
+def assert_safe_test_database(url_str: str) -> None:
+    """
+    Enforces fail-closed multi-factor verification before any test interacts with a database:
+    1. Both ENVIRONMENT='testing' AND EDUINTEL_TEST_MODE='true' must be present simultaneously.
+    2. Host must be strictly 'localhost' or '127.0.0.1'.
+    3. Port must be 5432 (standard PostgreSQL port) or omitted.
+    4. Query parameters are strictly rejected to prevent connection injection.
+    5. Database name must match the strict regex ^eduintel_test(_[a-zA-Z0-9_-]+)?$.
+    6. Protected database names ('eduintel', 'postgres', 'production', 'staging') are forbidden.
+    """
+    env = os.getenv("ENVIRONMENT")
+    test_mode = os.getenv("EDUINTEL_TEST_MODE")
+    if env != "testing" or test_mode != "true":
+        raise RuntimeError(
+            f"FATAL: Tests may only run when ENVIRONMENT='testing' AND EDUINTEL_TEST_MODE='true'. "
+            f"Current state: ENVIRONMENT='{env}', EDUINTEL_TEST_MODE='{test_mode}'"
+        )
+
+    url = make_url(url_str)
+
+    # 1. Host restriction
+    if url.host not in {"localhost", "127.0.0.1"}:
+        raise RuntimeError(
+            f"FATAL: Test database host '{url.host}' is not localhost/127.0.0.1. "
+            "Refusing to execute tests against a remote or non-loopback host."
+        )
+
+    # 2. Port restriction
+    if url.port is not None and url.port != 5432:
+        raise RuntimeError(
+            f"FATAL: Non-standard database port '{url.port}'. Tests strictly require port 5432."
+        )
+
+    # 3. Reject unexpected query parameters
+    if url.query:
+        raise RuntimeError(
+            f"FATAL: Test database URL contains unexpected query parameters: {url.query}"
+        )
+
+    # 4. Prohibit protected database names
+    db_name = url.database or ""
+    if db_name.lower() in {"eduintel", "postgres", "production", "staging"}:
+        raise RuntimeError(
+            f"FATAL: Test target '{db_name}' is a protected production/development database name. Aborting."
+        )
+
+    # 5. Strict allowlist regex check
+    if not re.match(r"^eduintel_test(_[a-zA-Z0-9_-]+)?$", db_name):
+        raise RuntimeError(
+            f"FATAL: Test database name '{db_name}' violates allowlist regex '^eduintel_test(_[a-zA-Z0-9_-]+)?$'."
+        )
+
+
+@pytest.fixture(scope="session", autouse=True)
+def verify_and_prepare_test_database():
+    """
+    Session-level initialization:
+    1. Validates test database safety invariants.
+    2. Verifies Alembic schema is upgraded to 'head'.
+    3. Dynamically asserts schema integrity: 22 tables, 17 FORCE RLS tables, split policies,
+       and unprivileged status of the application role.
+    """
+    assert_safe_test_database(TEST_DATABASE_URL)
+
+    import asyncio
+
+    import alembic.config
+
+    from alembic import command
+
+    alembic_cfg = alembic.config.Config("alembic.ini")
+    alembic_cfg.set_main_option("sqlalchemy.url", TEST_DATABASE_URL)
+    command.upgrade(alembic_cfg, "head")
+
+    # Run dynamic schema verification queries
+    url = make_url(TEST_DATABASE_URL)
+    raw_url = f"postgresql://{url.username}:{url.password}@{url.host}:{url.port}/{url.database}"
+
+    async def _verify_schema():
+        conn = await asyncpg.connect(raw_url)
+        try:
+            # 1. Assert minimum table count
+            tables = [r["tablename"] for r in await conn.fetch("SELECT tablename FROM pg_tables WHERE schemaname = 'public'")]
+            if len(tables) < 22:
+                raise RuntimeError(f"Expected at least 22 tables in test DB, found {len(tables)}: {tables}")
+
+            # 2. Assert RLS and FORCE RLS on tenant tables
+            rls_tables = [
+                r["relname"]
+                for r in await conn.fetch("""
+                    SELECT c.relname
+                    FROM pg_class c
+                    JOIN pg_namespace n ON n.oid = c.relnamespace
+                    WHERE n.nspname = 'public' AND c.relkind = 'r' AND c.relrowsecurity = true AND c.relforcerowsecurity = true
+                """)
+            ]
+            if len(rls_tables) != 17:
+                raise RuntimeError(f"Expected 17 FORCE RLS tables, found {len(rls_tables)}: {rls_tables}")
+
+            # 3. Assert split RLS policies from Migration 0025
+            split_policies = await conn.fetch("""
+                SELECT policyname FROM pg_policies
+                WHERE schemaname = 'public' AND (
+                    policyname LIKE '%_read_policy' OR
+                    policyname LIKE '%_insert_policy' OR
+                    policyname LIKE '%_update_policy' OR
+                    policyname LIKE '%_delete_policy'
+                )
+            """)
+            if len(split_policies) < 68:
+                raise RuntimeError(f"Expected at least 68 split policies, found {len(split_policies)}")
+
+            # 4. Assert eduintel_app is unprivileged
+            app_role = await conn.fetchrow("SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = 'eduintel_app'")
+            if not app_role:
+                raise RuntimeError("Unprivileged application role 'eduintel_app' does not exist in PostgreSQL")
+            if app_role["rolsuper"] or app_role["rolbypassrls"]:
+                raise RuntimeError("Role 'eduintel_app' must NOT have rolsuper or rolbypassrls privileges")
+        finally:
+            await conn.close()
+
+    asyncio.run(_verify_schema())
 
 
 @pytest_asyncio.fixture
 async def test_engine():
-    """
-    Function-scoped on purpose (not session-scoped). pytest-asyncio gives
-    each test function its own event loop runner by default, but asyncpg
-    connections are bound to the loop that created them. A session-scoped
-    engine's pooled connections get created on the SESSION runner's loop,
-    then get used from each TEST's own (different) runner/loop — which is
-    exactly what produced the "another operation in progress" errors: the
-    connection object was being driven from a loop it wasn't created on.
-    Creating a fresh engine (and NullPool, so nothing is pooled/reused
-    across checkouts either) inside each test's own loop avoids this
-    entirely. Cost: schema is created/dropped per test instead of once —
-    negligible for a suite this size.
-    """
+    """Provides an AsyncEngine with NullPool bound to TEST_DATABASE_URL."""
     engine = create_async_engine(TEST_DATABASE_URL, future=True, poolclass=NullPool)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
     yield engine
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
     await engine.dispose()
+
+
+@pytest_asyncio.fixture
+async def db_connection(test_engine):
+    """
+    Per-test connection fixture providing savepoint transaction isolation.
+    Opens an outer transaction that is unconditionally rolled back at teardown,
+    followed by a resilient multi-parameter reset trap.
+    """
+    conn = await test_engine.connect()
+    trans = await conn.begin()
+    try:
+        yield conn
+    finally:
+        await trans.rollback()
+        # Resilient state cleanup
+        await conn.execute(text("RESET ROLE;"))
+        await conn.execute(text("RESET ALL;"))
+        await conn.execute(
+            text(
+                "DO $$ BEGIN "
+                "PERFORM set_config('app.current_institution_id', '', false); "
+                "PERFORM set_config('app.is_platform_admin', '', false); "
+                "END $$;"
+            )
+        )
+        await conn.close()
+
+
+@pytest_asyncio.fixture
+async def client(db_connection):
+    """
+    An httpx AsyncClient hitting the FastAPI app with get_db overridden to
+    hand out a session bound to db_connection with savepoint isolation.
+    """
+    async def _override_get_db():
+        session = AsyncSession(
+            bind=db_connection,
+            expire_on_commit=False,
+            join_transaction_mode="create_savepoint",
+        )
+        try:
+            yield session
+        finally:
+            await session.close()
+
+    app.dependency_overrides[get_db] = _override_get_db
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        yield ac
+    app.dependency_overrides.clear()
+
+
+async def _provision_user(db_connection, role: str) -> str:
+    """
+    Provisions a throwaway test user and profile inside the active savepoint.
+    Sets transaction-local tenant context so RLS permits profile creation.
+    """
+    unique = uuid.uuid4().hex[:8]
+    email = f"test-{role}-{unique}@example.com"
+    password = "TestPassword123!"
+
+    session = AsyncSession(
+        bind=db_connection,
+        expire_on_commit=False,
+        join_transaction_mode="create_savepoint",
+    )
+    inst_id = uuid.UUID("00000000-0000-0000-0000-000000000001")
+
+    # Set institution context so RLS policies allow insertion
+    await session.execute(
+        text("SELECT set_config('app.current_institution_id', :id, true)"),
+        {"id": str(inst_id)},
+    )
+
+    inst = (await session.execute(select(Institution).where(Institution.id == inst_id))).scalars().first()
+    if not inst:
+        inst = Institution(
+            id=inst_id,
+            name="Default Test Institution",
+            slug="test-inst",
+            is_active=True,
+        )
+        session.add(inst)
+        await session.flush()
+
+    user = User(
+        email=email,
+        name=f"Test {role.capitalize()}",
+        hashed_password=hash_password(password),
+        role=role,
+        is_active=True,
+        is_platform_admin=False,
+    )
+    session.add(user)
+    await session.flush()
+
+    session.add(
+        InstitutionMembership(
+            id=uuid.uuid4(),
+            institution_id=inst.id,
+            user_id=user.id,
+            role=role,
+            status="active",
+        )
+    )
+
+    if role == "student":
+        session.add(StudentProfile(institution_id=inst.id, user_id=user.id, grade="10", section="A"))
+    elif role == "teacher":
+        session.add(
+            TeacherProfile(
+                institution_id=inst.id, user_id=user.id, department="Science", subjects="Physics"
+            )
+        )
+    elif role == "admin":
+        session.add(
+            AdminProfile(institution_id=inst.id, user_id=user.id, designation="Test Administrator")
+        )
+
+    await session.commit()
+    await session.close()
+    return create_access_token({"sub": str(user.id), "role": role})
+
+
+@pytest_asyncio.fixture
+async def admin_token(db_connection) -> str:
+    return await _provision_user(db_connection, "admin")
+
+
+@pytest_asyncio.fixture
+async def teacher_token(db_connection) -> str:
+    return await _provision_user(db_connection, "teacher")
+
+
+@pytest_asyncio.fixture
+async def student_token(db_connection) -> str:
+    return await _provision_user(db_connection, "student")
+
+
+def auth_headers(token: str) -> dict:
+    return {"Authorization": f"Bearer {token}"}
 
 
 @pytest.fixture(autouse=True)
 def prevent_live_smtp_during_tests(monkeypatch):
-    """
-    Globally intercepts all SMTP calls so tests never connect to live Gmail SMTP servers
-    or dispatch real emails.
-    """
+    """Globally intercepts all SMTP calls to prevent external dispatch."""
     from unittest.mock import MagicMock
     mock_send = MagicMock(return_value={"status": "sent"})
     monkeypatch.setattr("app.auth.service.send_email_direct", mock_send)
@@ -83,124 +326,7 @@ def prevent_live_smtp_during_tests(monkeypatch):
 
 @pytest_asyncio.fixture(autouse=True)
 async def reset_app_engine_pool():
-    """
-    Teardown fixture that disposes pooled connections on the global application engine
-    between pytest test cases. In test suites where test cases use function-scoped event
-    loops, pooled asyncpg connections from a completed test's event loop will fail if
-    reused in a subsequent test's new loop ('got Future attached to a different loop').
-    Disposing the engine ensures each test case creates fresh connections in its active loop.
-    """
+    """Teardown fixture that disposes pooled connections on global engine."""
     yield
     from app.core.database import engine
     await engine.dispose()
-
-
-@pytest_asyncio.fixture
-async def client(test_engine):
-    """
-    An httpx AsyncClient that hits your FastAPI app in-process (no real
-    server needed), with get_db overridden to hand out a FRESH session per
-    request from a session factory.
-
-    Important: each httpx call through ASGITransport runs the app in its
-    own asyncio task. Sharing a single AsyncSession/connection across
-    multiple requests (the original version of this fixture did) makes
-    asyncpg choke with "another operation is in progress", because the
-    same underlying connection gets driven from more than one task
-    context. A fresh session per request (this version) avoids that —
-    it's also just what a real get_db() typically does.
-    """
-    TestSessionLocal = async_sessionmaker(test_engine, expire_on_commit=False)
-
-    async def _override_get_db():
-        async with TestSessionLocal() as session:
-            yield session
-
-    app.dependency_overrides[get_db] = _override_get_db
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
-        yield ac
-    app.dependency_overrides.clear()
-
-
-async def _provision_user(test_engine, role: str) -> str:
-    """
-    Creates a throwaway test user and profile directly in the test database
-    and returns a valid access token. Does NOT use public signup since
-    public signup is disabled in SEC-02.
-    """
-    unique = uuid.uuid4().hex[:8]
-    email = f"test-{role}-{unique}@example.com"
-    password = "TestPassword123!"
-
-    TestSessionLocal = async_sessionmaker(test_engine, expire_on_commit=False)
-    async with TestSessionLocal() as session:
-        from sqlalchemy import select
-
-        from app.institutions.models import Institution, InstitutionMembership
-        inst = (await session.execute(select(Institution))).scalars().first()
-        if not inst:
-            inst = Institution(
-                id=uuid.UUID("00000000-0000-0000-0000-000000000001"),
-                name="Default Test Institution",
-                slug="test-inst",
-                is_active=True,
-            )
-            session.add(inst)
-            await session.flush()
-
-        user = User(
-            email=email,
-            name=f"Test {role.capitalize()}",
-            hashed_password=hash_password(password),
-            role=role,
-            is_active=True,
-            is_platform_admin=False,
-        )
-        session.add(user)
-        await session.flush()
-
-        session.add(
-            InstitutionMembership(
-                id=uuid.uuid4(),
-                institution_id=inst.id,
-                user_id=user.id,
-                role=role,
-                status="active",
-            )
-        )
-
-        if role == "student":
-            session.add(StudentProfile(institution_id=inst.id, user_id=user.id, grade="10", section="A"))
-        elif role == "teacher":
-            session.add(
-                TeacherProfile(
-                    institution_id=inst.id, user_id=user.id, department="Science", subjects="Physics"
-                )
-            )
-        elif role == "admin":
-            session.add(
-                AdminProfile(institution_id=inst.id, user_id=user.id, designation="Test Administrator")
-            )
-
-        await session.commit()
-        return create_access_token({"sub": str(user.id), "role": role})
-
-
-@pytest_asyncio.fixture
-async def admin_token(test_engine) -> str:
-    return await _provision_user(test_engine, "admin")
-
-
-@pytest_asyncio.fixture
-async def teacher_token(test_engine) -> str:
-    return await _provision_user(test_engine, "teacher")
-
-
-@pytest_asyncio.fixture
-async def student_token(test_engine) -> str:
-    return await _provision_user(test_engine, "student")
-
-
-def auth_headers(token: str) -> dict:
-    return {"Authorization": f"Bearer {token}"}

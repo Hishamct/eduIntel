@@ -78,7 +78,7 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         if settings.ENVIRONMENT == "production":
             raise RuntimeError(
-                f"FATAL: Database privilege check failed in production: {exc}"
+                f"FATAL: Database privilege check failed to execute in production: {exc}"
             ) from exc
         print(f"[startup] WARNING: Database privilege check skipped in {settings.ENVIRONMENT} mode: {exc}")
     yield

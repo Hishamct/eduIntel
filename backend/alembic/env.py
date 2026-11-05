@@ -24,7 +24,9 @@ target_metadata = Base.metadata
 config = context.config
 
 # Allow environment variable override for DATABASE_URL (12-factor standard)
-if os.environ.get("DATABASE_URL"):
+if (os.environ.get("ENVIRONMENT") == "testing" or os.environ.get("EDUINTEL_TEST_MODE") == "true") and os.environ.get("TEST_DATABASE_URL"):
+    config.set_main_option("sqlalchemy.url", os.environ["TEST_DATABASE_URL"])
+elif os.environ.get("DATABASE_URL"):
     config.set_main_option("sqlalchemy.url", os.environ["DATABASE_URL"])
 
 # Interpret the config file for Python logging.

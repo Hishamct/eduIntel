@@ -260,6 +260,11 @@ async def get_tenant_db(
         res = override()
         if inspect.isasyncgen(res):
             async for s in res:
+                if hasattr(s, "execute") and tenant and hasattr(tenant, "institution_id"):
+                    await s.execute(
+                        text("SELECT set_config('app.current_institution_id', :inst_id, true)"),
+                        {"inst_id": str(tenant.institution_id)},
+                    )
                 yield s
         elif inspect.isgenerator(res):
             for s in res:
@@ -306,6 +311,10 @@ async def get_platform_admin_db(
         res = override()
         if inspect.isasyncgen(res):
             async for s in res:
+                if hasattr(s, "execute"):
+                    await s.execute(
+                        text("SELECT set_config('app.is_platform_admin', 'true', true)")
+                    )
                 yield s
         elif inspect.isgenerator(res):
             for s in res:
