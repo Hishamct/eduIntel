@@ -190,19 +190,22 @@ jobs:
         run: |
           cd backend
           set -o pipefail
-          pytest --cov=app --cov-config=.coveragerc --cov-report=term-missing --cov-report=xml:coverage.xml --cov-fail-under=66 --tb=short -ra 2>&1 | tee pytest-output.txt
+          pytest --cov=app --cov-config=.coveragerc --cov-report=term-missing --cov-report=xml:coverage.xml --cov-fail-under=66 --tb=short -ra 2>&1 | tee /tmp/pytest-run.log
 
       - name: Annotate Pytest Results
         if: always()
         run: |
-          if [ -f backend/pytest-output.txt ]; then
-            grep "^FAILED " backend/pytest-output.txt | while IFS= read -r line; do
-              echo "::error title=Pytest Failure::$line"
-            done
-            grep "FAIL-UNDER" backend/pytest-output.txt | while IFS= read -r line; do
-              echo "::error title=Coverage Ratchet Failure::$line"
-            done
-          fi
+          python3 -c "
+          import os
+          if os.path.exists('/tmp/pytest-run.log'):
+              with open('/tmp/pytest-run.log') as f:
+                  lines = [l.strip() for l in f if l.strip()]
+              failures = [l for l in lines if 'FAILED' in l or 'ERROR' in l or 'FAIL Required' in l]
+              for f_line in failures[:30]:
+                  print(f'::error title=Pytest Error::{f_line}')
+              for s_line in lines[-30:]:
+                  print(f'::warning title=Pytest Output::{s_line}')
+          "
 
   frontend:
     name: Frontend Test Suite & Production Build
