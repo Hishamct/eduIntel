@@ -1,26 +1,16 @@
 """
-Prompt-injection defense: detects attempts to override system instructions
-embedded in user-supplied text (a student's doubt-forum question, a portal
-assistant message, a study-tutor query) before that text is interpolated
-into an LLM prompt.
+backend/app/guardrails/prompt_injection.py
 
-This is a pattern/heuristic guard, not a model-based classifier — appropriate
-for a capstone timeline, and transparent/auditable (you can point a reviewer
-at the exact pattern list). It deliberately errs toward catching the common,
-well-known jailbreak phrasings rather than trying to be exhaustive; a
-production system would layer this with an LLM-based classifier as a second
-line of defense.
+Prompt-injection and jailbreak defense for EduIntel AI.
+Scans user-supplied text for attempts to override system instructions,
+hijack persona, extract confidential system prompts, or bypass safety guardrails.
 
-Usage:
-    from app.core.guardrails import check_for_prompt_injection
-
-    is_flagged, matched_pattern = check_for_prompt_injection(user_query)
-    if is_flagged:
-        return {"answer": INJECTION_REFUSAL_MESSAGE, ...}
-    # otherwise proceed to build the prompt as normal
+Hardened with ReDoS protection and supervised subprocess isolation.
 """
 
 import re
+
+from app.guardrails.redos_guard import safe_regex_match_any
 
 INJECTION_REFUSAL_MESSAGE = (
     "I can't process that message — it looks like it's trying to change how "
@@ -29,50 +19,93 @@ INJECTION_REFUSAL_MESSAGE = (
     "that directly."
 )
 
-# Each pattern is matched case-insensitively against the raw user input.
-# Grouped by the kind of attack they represent, for readability and so new
-# patterns are easy to slot into the right category.
+# Comprehensive catalog of known injection, jailbreak, and prompt-extraction vectors
 _INJECTION_PATTERNS = [
-    # Instruction override attempts
-    r"ignore (all |any )?(previous|prior|above|earlier) instructions",
-    r"disregard (the |all )?(system prompt|instructions|rules)",
+    # 1. Instruction override attempts
+    r"ignore (all |any )?(previous|prior|above|earlier) (instructions|directives|rules|prompts)",
+    r"disregard (the |all )?(system prompt|instructions|directives|rules)",
     r"forget (everything|what|all) (you('ve| have)? been told|i said|your instructions)",
     r"new instructions?\s*:",
     r"override (your |the )?(system prompt|instructions|rules)",
-    # Role / persona hijacking
+    r"stop being a tutor",
+    r"abandon (your |all )?(instructions|rules|guidelines)",
+    # 2. Role / persona hijacking
     r"you are now\s+\w+",
     r"act as (an?|the)\s+\w+",
     r"pretend (you('re| are)|to be)\s+\w+",
     r"from now on,? you (are|will|must)",
     r"enter (developer|debug|jailbreak|dan|unrestricted) mode",
     r"\bdan mode\b",
-    # Attempts to extract the system prompt itself
+    r"developer mode enabled",
+    # 3. System prompt extraction
     r"(reveal|show|print|output|repeat) (your |the )?(system )?prompt",
     r"what (is|are) your (system )?(prompt|instructions|rules)",
     r"repeat (the words|everything) above",
-    # Explicit jailbreak / restriction-bypass language
+    r"print everything starting from",
+    r"output your initial instructions",
+    # 4. Explicit jailbreak / bypass language
     r"\bjailbreak\b",
     r"without (any )?(restrictions|limitations|filters|guidelines)",
     r"bypass (your |the )?(restrictions|filters|guidelines|safety)",
     r"no longer (bound|restricted|limited) by",
+    r"hypothetical scenario where rules don't apply",
+    r"for educational and research purposes only, ignore all safety",
+    # 5. Delimiter & Framing Injection
+    r"(?:---|===|\*\*\*)\s*(?:BEGIN|START)\s*(?:SYSTEM|ADMIN|PROMPT)",
+    r"<\s*\|\s*(?:im_start|system|prompt)\s*\|?\s*>",
+    r"\[\s*(?:SYSTEM|INSTRUCTION|ADMIN)\s*\]",
 ]
 
 _COMPILED_PATTERNS = [re.compile(p, re.IGNORECASE) for p in _INJECTION_PATTERNS]
+PROMPT_INJECTION_PATTERNS = _INJECTION_PATTERNS
 
 
-def check_for_prompt_injection(text: str) -> tuple[bool, str | None]:
+def check_for_prompt_injection(
+    text: str,
+    timeout_seconds: float = 0.150,
+) -> tuple[bool, str | None]:
     """
-    Scans user-supplied text for known prompt-injection / jailbreak
-    patterns. Returns (is_flagged, matched_pattern_description).
+    Scans user-supplied text for known prompt-injection / jailbreak patterns.
+    Protected against ReDoS via safe DFA / supervised subprocess execution.
 
-    is_flagged=True means the caller should NOT pass this text into an LLM
-    prompt as-is — return INJECTION_REFUSAL_MESSAGE (or similar) instead.
+    Returns:
+        (is_flagged, matched_pattern_description)
     """
-    if not text:
+    if not text or not text.strip():
         return False, None
 
-    for pattern in _COMPILED_PATTERNS:
-        if pattern.search(text):
-            return True, pattern.pattern
+    result = safe_regex_match_any(
+        patterns=_INJECTION_PATTERNS,
+        text=text,
+        timeout_seconds=timeout_seconds,
+        flags=re.IGNORECASE,
+    )
+
+    if result.timed_out:
+        # Fail closed on ReDoS timeout
+        return True, "GUARDRAIL_TIMEOUT"
+
+    if result.matched:
+        return True, result.matched_pattern
 
     return False, None
+
+
+def check_for_prompt_injection_safe(
+    text: str,
+    timeout_seconds: float = 0.150,
+) -> tuple[bool, str | None, bool]:
+    """
+    Extended scanner returning (is_flagged, matched_pattern, timed_out).
+    """
+    if not text or not text.strip():
+        return False, None, False
+
+    result = safe_regex_match_any(
+        patterns=_INJECTION_PATTERNS,
+        text=text,
+        timeout_seconds=timeout_seconds,
+        flags=re.IGNORECASE,
+    )
+
+    return result.matched or result.timed_out, result.matched_pattern or result.error, result.timed_out
