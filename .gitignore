@@ -5,3 +5,4 @@ backups/
 uploads/
 __pycache__/
 *.pyc
+backend/app/rag/eval/offline_retrieval_benchmark_results.json
