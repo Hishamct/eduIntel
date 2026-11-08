@@ -1,5 +1,5 @@
-import time
 from dataclasses import dataclass
+from typing import Any
 
 from google import genai
 from google.genai import types
@@ -14,10 +14,21 @@ GEMINI_MODEL = "gemini-3.6-flash"
 GROQ_FALLBACK_MODEL = "openai/gpt-oss-120b"
 
 
+class UnmeteredAIInvocationError(RuntimeError):
+    """Raised when an external AI provider call is attempted without an active, verified MeteredRequestContext."""
+
+    pass
+
+
+class QuotaSystemDisabledError(RuntimeError):
+    """Raised when an external AI provider call is attempted while ENABLE_TENANT_AI_QUOTAS is disabled."""
+
+    pass
+
+
 @dataclass
 class LLMCallUsage:
-
-    provider: str  
+    provider: str
     model: str
     input_tokens: int | None
     output_tokens: int | None
@@ -26,7 +37,7 @@ class LLMCallUsage:
 
 
 def _is_rate_limit_error(e: Exception) -> bool:
-    
+
     msg = str(e)
     msg_lower = msg.lower()
     return (
@@ -40,130 +51,103 @@ def _is_rate_limit_error(e: Exception) -> bool:
     )
 
 
-def _generate_text_impl(prompt: str) -> tuple[str, LLMCallUsage]:
-    start = time.monotonic()
-    try:
-        response = _gemini_client.models.generate_content(
-            model=GEMINI_MODEL,
-            contents=prompt,
-        )
-        latency_ms = int((time.monotonic() - start) * 1000)
-        usage = getattr(response, "usage_metadata", None)
-        return response.text, LLMCallUsage(
-            provider="gemini",
-            model=GEMINI_MODEL,
-            input_tokens=getattr(usage, "prompt_token_count", None) if usage else None,
-            output_tokens=getattr(usage, "candidates_token_count", None)
-            if usage
-            else None,
-            latency_ms=latency_ms,
-            used_fallback=False,
-        )
-    except Exception as e:
-        if not _is_rate_limit_error(e):
-            raise
-        fallback_start = time.monotonic()
-        groq_response = _groq_client.chat.completions.create(
-            model=GROQ_FALLBACK_MODEL,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        latency_ms = int((time.monotonic() - fallback_start) * 1000)
-        usage = getattr(groq_response, "usage", None)
-        return groq_response.choices[0].message.content, LLMCallUsage(
-            provider="groq",
-            model=GROQ_FALLBACK_MODEL,
-            input_tokens=getattr(usage, "prompt_tokens", None) if usage else None,
-            output_tokens=getattr(usage, "completion_tokens", None) if usage else None,
-            latency_ms=latency_ms,
-            used_fallback=True,
+def _generate_text_impl(prompt: str, context: Any = None) -> tuple[str, LLMCallUsage]:
+    from app.observability.quota.adapter import (
+        get_current_metered_context,
+        get_metered_ai_service,
+        run_metered_coro_sync,
+    )
+
+    ctx = context or get_current_metered_context()
+    if ctx is not None:
+        service = get_metered_ai_service()
+        result = run_metered_coro_sync(service.execute_text_generation(ctx, prompt))
+        return result.text, result.usage
+
+    is_production = getattr(settings, "is_production", False) or settings.ENVIRONMENT == "production"
+    is_test_bypass = not is_production and getattr(settings, "ALLOW_UNMETERED_AI_TEST_BYPASS", False)
+
+    if not is_test_bypass:
+        if not settings.ENABLE_TENANT_AI_QUOTAS:
+            raise QuotaSystemDisabledError(
+                "AI execution rejected: ENABLE_TENANT_AI_QUOTAS is disabled and unmetered bypass is forbidden."
+            )
+        raise UnmeteredAIInvocationError(
+            "AI execution rejected: No verified MeteredRequestContext is active in the execution context."
         )
 
+    from app.core.llm_provider import LLMProviderRegistry
 
-def generate_text(prompt: str) -> str:
+    registry = LLMProviderRegistry.get_instance()
+    text, usage = registry.generate_text(prompt)
+    return text, usage
+
+
+def generate_text(prompt: str, *, context: Any = None) -> str:
     """
     Plain text generation, no tool-calling.
     Tries Gemini first, falls back to Groq if Gemini is rate-limited.
     Used by both agents' final answer-generation step.
-
+    Routes through Stage 7.3 MeteredAIService when context is active.
     """
-    text, _usage = _generate_text_impl(prompt)
+    text, _usage = _generate_text_impl(prompt, context=context)
     return text
 
 
-def generate_text_with_usage(prompt: str) -> tuple[str, LLMCallUsage]:
+def generate_text_with_usage(prompt: str, *, context: Any = None) -> tuple[str, LLMCallUsage]:
     """
     Same as generate_text(), but also returns the LLMCallUsage for this
     call so can log it immediately (no shared/global state,
     so this is safe to call from any sync or async context, including
     inside a LangGraph node run via asyncio.to_thread).
+    Routes through Stage 7.3 MeteredAIService when context is active.
     """
-    return _generate_text_impl(prompt)
+    return _generate_text_impl(prompt, context=context)
 
 
-def _decide_tools_impl(
-    prompt: str, tool: types.Tool
-) -> tuple[list[dict], LLMCallUsage]:
-    start = time.monotonic()
-    try:
-        response = _gemini_client.models.generate_content(
-            model=GEMINI_MODEL,
-            contents=prompt,
-            config=types.GenerateContentConfig(tools=[tool]),
-        )
-    except Exception as e:
-        if not _is_rate_limit_error(e):
-            raise
-        latency_ms = int((time.monotonic() - start) * 1000)
-        usage = LLMCallUsage(
-            provider="gemini",
-            model=GEMINI_MODEL,
-            input_tokens=None,
-            output_tokens=None,
-            latency_ms=latency_ms,
-            used_fallback=False,
-        )
-        return (
-            [],
-            usage,
-        )  
-
-    latency_ms = int((time.monotonic() - start) * 1000)
-    usage_meta = getattr(response, "usage_metadata", None)
-    usage = LLMCallUsage(
-        provider="gemini",
-        model=GEMINI_MODEL,
-        input_tokens=getattr(usage_meta, "prompt_token_count", None)
-        if usage_meta
-        else None,
-        output_tokens=getattr(usage_meta, "candidates_token_count", None)
-        if usage_meta
-        else None,
-        latency_ms=latency_ms,
-        used_fallback=False,
+def _decide_tools_impl(prompt: str, tool: types.Tool, context: Any = None) -> tuple[list[dict], LLMCallUsage]:
+    from app.observability.quota.adapter import (
+        get_current_metered_context,
+        get_metered_ai_service,
+        run_metered_coro_sync,
     )
 
-    tool_calls = []
-    candidate = response.candidates[0]
-    for part in candidate.content.parts:
-        if part.function_call:
-            tool_calls.append(
-                {
-                    "name": part.function_call.name,
-                    "args": dict(part.function_call.args)
-                    if part.function_call.args
-                    else {},
-                }
+    ctx = context or get_current_metered_context()
+    if ctx is not None:
+        # If the parent context has a general endpoint like 'admin-assistant/chat',
+        # specialize it for decide_tools
+        effective_ctx = ctx
+        if ctx.endpoint.endswith("/chat"):
+            effective_ctx = ctx.for_endpoint(f"{ctx.endpoint.split('/')[0]}/decide_tools")
+
+        service = get_metered_ai_service()
+        result = run_metered_coro_sync(service.execute_tool_decision(effective_ctx, prompt, tool))
+        return result.tool_calls, result.usage
+
+    is_production = getattr(settings, "is_production", False) or settings.ENVIRONMENT == "production"
+    is_test_bypass = not is_production and getattr(settings, "ALLOW_UNMETERED_AI_TEST_BYPASS", False)
+
+    if not is_test_bypass:
+        if not settings.ENABLE_TENANT_AI_QUOTAS:
+            raise QuotaSystemDisabledError(
+                "AI tool decision rejected: ENABLE_TENANT_AI_QUOTAS is disabled and unmetered bypass is forbidden."
             )
-    return tool_calls, usage
+        raise UnmeteredAIInvocationError(
+            "AI tool decision rejected: No verified MeteredRequestContext is active in the execution context."
+        )
+
+    from app.core.llm_provider import LLMProviderRegistry
+
+    registry = LLMProviderRegistry.get_instance()
+    tool_calls, usage = registry.decide_tools(prompt, tool)
+    call_dicts = [{"name": tc.name, "args": tc.args, "tool_call_id": tc.tool_call_id} for tc in tool_calls]
+    return call_dicts, usage
 
 
-def decide_tools(prompt: str, tool: types.Tool) -> list[dict]:
-    
-    tool_calls, _usage = _decide_tools_impl(prompt, tool)
+def decide_tools(prompt: str, tool: types.Tool, *, context: Any = None) -> list[dict]:
+    tool_calls, _usage = _decide_tools_impl(prompt, tool, context=context)
     return tool_calls
 
 
-def decide_tools_with_usage(
-    prompt: str, tool: types.Tool
-) -> tuple[list[dict], LLMCallUsage]:
-    return _decide_tools_impl(prompt, tool)
+def decide_tools_with_usage(prompt: str, tool: types.Tool, *, context: Any = None) -> tuple[list[dict], LLMCallUsage]:
+    return _decide_tools_impl(prompt, tool, context=context)
