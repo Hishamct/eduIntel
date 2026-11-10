@@ -1,8 +1,11 @@
+import asyncio
 import logging
+import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.tenant import (
     TenantContext,
@@ -10,6 +13,11 @@ from app.core.tenant import (
     get_trusted_tenant_id,
     normalize_institution_id,
     require_tenant_role,
+)
+from app.observability.quota import (
+    MeteredRequestContext,
+    get_current_metered_context,
+    metered_execution_context,
 )
 from app.observability.service import log_llm_usage, log_socratic_redirect
 from app.rag.client import get_portal_help_collection, get_study_materials_collection
@@ -63,13 +71,40 @@ async def query_rag(
             detail="Tenant context required for study materials access",
         )
 
-    try:
-        result = retrieve_and_generate(
+    inst_uuid = normalize_institution_id(trusted_tenant_id) if trusted_tenant_id is not None else None
+    metered_ctx = None
+    if inst_uuid is not None and (settings.ENABLE_TENANT_AI_QUOTAS or get_current_metered_context() is not None):
+        metered_ctx = MeteredRequestContext(
+            institution_id=inst_uuid,
+            user_id=current_user.id,
+            endpoint="rag/query",
+            usage_category="interactive_ai",
+            idempotency_key=f"rag:{inst_uuid}:{uuid.uuid4()}",
+        )
+    elif settings.is_production:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Tenant AI quotas are disabled or unconfigured in production.",
+        )
+
+    def _run_rag_sync():
+        if metered_ctx is not None:
+            with metered_execution_context(metered_ctx):
+                return retrieve_and_generate(
+                    query=payload.query,
+                    collection_name=payload.collection,
+                    n_results=payload.n_results,
+                    institution_id=trusted_tenant_id,
+                )
+        return retrieve_and_generate(
             query=payload.query,
             collection_name=payload.collection,
             n_results=payload.n_results,
             institution_id=trusted_tenant_id,
         )
+
+    try:
+        result = await asyncio.to_thread(_run_rag_sync)
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

@@ -12,11 +12,39 @@ _genai_client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
 class GeminiEmbeddingFunction(EmbeddingFunction):
     """
-    Custom embedding function using Gemini's free-tier embedding model.
-    ChromaDB calls this automatically whenever documents are added or queried.
+    Custom embedding function using Gemini's embedding model.
+    Governed by Stage 7.3 MeteredAIService.
     """
 
     def __call__(self, input: Documents) -> Embeddings:
+        from app.core.llm_client import (
+            QuotaSystemDisabledError,
+            UnmeteredAIInvocationError,
+        )
+        from app.observability.quota.adapter import (
+            get_current_metered_context,
+            get_metered_ai_service,
+            run_metered_coro_sync,
+        )
+
+        ctx = get_current_metered_context()
+        if ctx is not None:
+            service = get_metered_ai_service()
+            result = run_metered_coro_sync(service.execute_embedding_generation(ctx, list(input)))
+            return result.embeddings
+
+        is_production = getattr(settings, "is_production", False) or settings.ENVIRONMENT == "production"
+        is_test_bypass = not is_production and getattr(settings, "ALLOW_UNMETERED_AI_TEST_BYPASS", False)
+
+        if not is_test_bypass:
+            if not settings.ENABLE_TENANT_AI_QUOTAS:
+                raise QuotaSystemDisabledError(
+                    "Embedding generation rejected: ENABLE_TENANT_AI_QUOTAS is disabled and unmetered bypass is forbidden."
+                )
+            raise UnmeteredAIInvocationError(
+                "Embedding generation rejected: No verified MeteredRequestContext is active in the execution context."
+            )
+
         response = _genai_client.models.embed_content(
             model="gemini-embedding-001",
             contents=input,
