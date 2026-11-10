@@ -1,0 +1,257 @@
+[
+  {
+    "query_id": "Q-PORTAL-01",
+    "query": "How do I submit my homework?",
+    "category": "portal_help",
+    "expected_collection": "portal_help_docs",
+    "tenant_context": null,
+    "expected_chunk_ids": ["student_homework_upload"],
+    "expected_keywords": ["submit homework", "to submit homework"],
+    "expected_behavior": "exact_hit",
+    "is_in_domain": true,
+    "expected_min_rank": 1
+  },
+  {
+    "query_id": "Q-PORTAL-02",
+    "query": "How do I ask a doubt on the platform?",
+    "category": "portal_help",
+    "expected_collection": "portal_help_docs",
+    "tenant_context": null,
+    "expected_chunk_ids": ["student_doubt_forum"],
+    "expected_keywords": ["ask a doubt", "doubt forum"],
+    "expected_behavior": "exact_hit",
+    "is_in_domain": true,
+    "expected_min_rank": 1
+  },
+  {
+    "query_id": "Q-PORTAL-03",
+    "query": "Where can I find study materials uploaded by my teachers?",
+    "category": "portal_help",
+    "expected_collection": "portal_help_docs",
+    "tenant_context": null,
+    "expected_chunk_ids": ["student_study_materials"],
+    "expected_keywords": ["find study materials", "study materials page"],
+    "expected_behavior": "exact_hit",
+    "is_in_domain": true,
+    "expected_min_rank": 1
+  },
+  {
+    "query_id": "Q-PORTAL-04",
+    "query": "What does the Self-Evaluation page show me?",
+    "category": "portal_help",
+    "expected_collection": "portal_help_docs",
+    "tenant_context": null,
+    "expected_chunk_ids": ["student_self_evaluation"],
+    "expected_keywords": ["self-evaluation", "academic progress"],
+    "expected_behavior": "exact_hit",
+    "is_in_domain": true,
+    "expected_min_rank": 1
+  },
+  {
+    "query_id": "Q-PORTAL-05",
+    "query": "What information appears on my dashboard right after I log in?",
+    "category": "portal_help",
+    "expected_collection": "portal_help_docs",
+    "tenant_context": null,
+    "expected_chunk_ids": ["student_dashboard_overview"],
+    "expected_keywords": ["dashboard", "understanding your dashboard"],
+    "expected_behavior": "exact_hit",
+    "is_in_domain": true,
+    "expected_min_rank": 1
+  },
+  {
+    "query_id": "Q-PORTAL-06",
+    "query": "I forgot my password, what should I do?",
+    "category": "portal_help",
+    "expected_collection": "portal_help_docs",
+    "tenant_context": null,
+    "expected_chunk_ids": ["account_password_reset"],
+    "expected_keywords": ["password", "reset your password", "forgot password"],
+    "expected_behavior": "exact_hit",
+    "is_in_domain": true,
+    "expected_min_rank": 1
+  },
+  {
+    "query_id": "Q-PORTAL-07-OOD",
+    "query": "Can I pay my tuition fees through the student portal?",
+    "category": "portal_help",
+    "expected_collection": "portal_help_docs",
+    "tenant_context": null,
+    "expected_chunk_ids": [],
+    "expected_keywords": [],
+    "expected_behavior": "refusal_ood",
+    "is_in_domain": false,
+    "expected_min_rank": null
+  },
+  {
+    "query_id": "Q-STUDY-01",
+    "query": "What is the domain of the sine and cosine functions?",
+    "category": "study_materials",
+    "expected_collection": "study_materials",
+    "tenant_context": "00000000-0000-0000-0000-000000000001",
+    "expected_chunk_ids": [
+      "d810521f-6889-4ffc-ab93-ee23ddae0ea9_chunk_0",
+      "d810521f-6889-4ffc-ab93-ee23ddae0ea9_chunk_1"
+    ],
+    "expected_keywords": ["domain", "sine", "cosine", "trigonometric"],
+    "expected_behavior": "exact_hit",
+    "is_in_domain": true,
+    "expected_min_rank": 1
+  },
+  {
+    "query_id": "Q-STUDY-02",
+    "query": "How does sin x behave as x increases from 0 to pi/2?",
+    "category": "study_materials",
+    "expected_collection": "study_materials",
+    "tenant_context": "00000000-0000-0000-0000-000000000001",
+    "expected_chunk_ids": [
+      "d810521f-6889-4ffc-ab93-ee23ddae0ea9_chunk_0",
+      "d810521f-6889-4ffc-ab93-ee23ddae0ea9_chunk_1"
+    ],
+    "expected_keywords": ["sin", "quadrant", "increases from 0 to 1"],
+    "expected_behavior": "exact_hit",
+    "is_in_domain": true,
+    "expected_min_rank": 1
+  },
+  {
+    "query_id": "Q-STUDY-03",
+    "query": "What are the key areas covered in the Algebra study notes?",
+    "category": "study_materials",
+    "expected_collection": "study_materials",
+    "tenant_context": "00000000-0000-0000-0000-000000000001",
+    "expected_chunk_ids": [
+      "a3841cdb-78fd-4880-a33e-a36df7a3f98a_chunk_0",
+      "a3841cdb-78fd-4880-a33e-a36df7a3f98a_chunk_1"
+    ],
+    "expected_keywords": ["algebra"],
+    "expected_behavior": "exact_hit",
+    "is_in_domain": true,
+    "expected_min_rank": 1
+  },
+  {
+    "query_id": "Q-STUDY-04",
+    "query": "What is the most common root cause of difficulty in Trigonometry, according to the study notes?",
+    "category": "study_materials",
+    "expected_collection": "study_materials",
+    "tenant_context": "00000000-0000-0000-0000-000000000001",
+    "expected_chunk_ids": [
+      "b156443f-2a40-485f-90dc-5dfcec0fd6ec_chunk_0",
+      "b156443f-2a40-485f-90dc-5dfcec0fd6ec_chunk_1"
+    ],
+    "expected_keywords": ["trigonometry"],
+    "expected_behavior": "exact_hit",
+    "is_in_domain": true,
+    "expected_min_rank": 1
+  },
+  {
+    "query_id": "Q-STUDY-05",
+    "query": "What do the Acids & Bases study notes cover?",
+    "category": "study_materials",
+    "expected_collection": "study_materials",
+    "tenant_context": "00000000-0000-0000-0000-000000000001",
+    "expected_chunk_ids": [
+      "3c421b45-ca71-40c8-97dc-ddd8ba0a09fe_chunk_0",
+      "3c421b45-ca71-40c8-97dc-ddd8ba0a09fe_chunk_1"
+    ],
+    "expected_keywords": ["acids", "bases"],
+    "expected_behavior": "exact_hit",
+    "is_in_domain": true,
+    "expected_min_rank": 1
+  },
+  {
+    "query_id": "Q-STUDY-06-OOD",
+    "query": "Explain Newton's second law of motion in detail, including its mathematical derivation.",
+    "category": "study_materials",
+    "expected_collection": "study_materials",
+    "tenant_context": "00000000-0000-0000-0000-000000000001",
+    "expected_chunk_ids": [],
+    "expected_keywords": [],
+    "expected_behavior": "refusal_ood",
+    "is_in_domain": false,
+    "expected_min_rank": null
+  },
+  {
+    "query_id": "Q-STUDY-07-OOD",
+    "query": "Summarize the theory of relativity.",
+    "category": "study_materials",
+    "expected_collection": "study_materials",
+    "tenant_context": "00000000-0000-0000-0000-000000000001",
+    "expected_chunk_ids": [],
+    "expected_keywords": [],
+    "expected_behavior": "refusal_ood",
+    "is_in_domain": false,
+    "expected_min_rank": null
+  },
+  {
+    "query_id": "Q-TENANT-A-AUTH",
+    "query": "What are the core mechanics formulas in Tenant Alpha syllabus?",
+    "category": "tenant_isolation",
+    "expected_collection": "study_materials",
+    "tenant_context": "inst-alpha",
+    "expected_chunk_ids": ["tenant_alpha_physics_01"],
+    "expected_keywords": ["alpha mechanics", "tenant alpha physics"],
+    "expected_behavior": "tenant_filtered_hit",
+    "is_in_domain": true,
+    "expected_min_rank": 1
+  },
+  {
+    "query_id": "Q-TENANT-B-AUTH",
+    "query": "What is the proprietary stoichiometry guide for Tenant Beta?",
+    "category": "tenant_isolation",
+    "expected_collection": "study_materials",
+    "tenant_context": "inst-beta",
+    "expected_chunk_ids": ["tenant_beta_chem_01"],
+    "expected_keywords": ["beta stoichiometry", "tenant beta chemistry"],
+    "expected_behavior": "tenant_filtered_hit",
+    "is_in_domain": true,
+    "expected_min_rank": 1
+  },
+  {
+    "query_id": "Q-CROSS-TENANT-LEAK-PROBE-01",
+    "query": "What is the proprietary stoichiometry guide for Tenant Beta?",
+    "category": "tenant_isolation",
+    "expected_collection": "study_materials",
+    "tenant_context": "inst-alpha",
+    "expected_chunk_ids": [],
+    "expected_keywords": [],
+    "expected_behavior": "zero_leakage_empty",
+    "is_in_domain": false,
+    "expected_min_rank": null
+  },
+  {
+    "query_id": "Q-CROSS-TENANT-LEAK-PROBE-02",
+    "query": "What are the core mechanics formulas in Tenant Alpha syllabus?",
+    "category": "tenant_isolation",
+    "expected_collection": "study_materials",
+    "tenant_context": "inst-beta",
+    "expected_chunk_ids": [],
+    "expected_keywords": [],
+    "expected_behavior": "zero_leakage_empty",
+    "is_in_domain": false,
+    "expected_min_rank": null
+  },
+  {
+    "query_id": "Q-UNAUTHORIZED-MISSING-TENANT",
+    "query": "Retrieve private physics study notes without tenant context",
+    "category": "tenant_isolation",
+    "expected_collection": "study_materials",
+    "tenant_context": null,
+    "expected_chunk_ids": [],
+    "expected_keywords": [],
+    "expected_behavior": "authorization_refusal",
+    "is_in_domain": false,
+    "expected_min_rank": null
+  },
+  {
+    "query_id": "Q-LEGACY-MISSING-METADATA-PROBE",
+    "query": "What is the domain of the sine and cosine functions?",
+    "category": "legacy_metadata_audit",
+    "expected_collection": "study_materials",
+    "tenant_context": "00000000-0000-0000-0000-000000000001",
+    "expected_chunk_ids": [],
+    "expected_keywords": ["domain", "sine", "cosine"],
+    "expected_behavior": "legacy_missing_metadata_empty",
+    "is_in_domain": true,
+    "expected_min_rank": null
+  }
+]
