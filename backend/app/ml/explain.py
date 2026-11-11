@@ -15,8 +15,10 @@ path (service._compute_at_risk_features) so the explanation can never
 silently drift out of sync with what the model actually saw.
 """
 
+import asyncio
 import uuid
 from functools import lru_cache
+from typing import Any
 
 import shap
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,6 +27,7 @@ from app.ml.service import (
     _compute_at_risk_features,
     _get_student_history,
     _load_at_risk_model,
+    validate_at_risk_features,
 )
 
 FEATURE_LABELS = {
@@ -43,6 +46,14 @@ def _get_explainer():
     return shap.TreeExplainer(model), bundle["feature_cols"]
 
 
+def _clear_explainer_cache_for_testing() -> None:
+    _get_explainer.cache_clear()
+
+
+def _compute_shap(explainer: Any, X: list[list[float]]) -> Any:
+    return explainer.shap_values(X)
+
+
 async def get_at_risk_explanation(db: AsyncSession, student_id: uuid.UUID) -> dict:
     attendance, homework, exams, doubts = await _get_student_history(db, student_id)
 
@@ -56,14 +67,18 @@ async def get_at_risk_explanation(db: AsyncSession, student_id: uuid.UUID) -> di
 
     features = _compute_at_risk_features(attendance, homework, exams, doubts)
 
-    explainer, feature_cols = _get_explainer()
-    bundle = _load_at_risk_model()
+    explainer, feature_cols = await asyncio.to_thread(_get_explainer)
+    bundle = await asyncio.to_thread(_load_at_risk_model)
     model = bundle["model"]
 
-    X = [[features[col] for col in feature_cols]]
-    risk_probability = float(model.predict_proba(X)[0][1])
+    vector = validate_at_risk_features(features, feature_cols)
+    X = [vector]
 
-    shap_values = explainer.shap_values(X)
+    # Offload model prediction and SHAP calculation to worker thread
+    probabilities = await asyncio.to_thread(model.predict_proba, X)
+    risk_probability = float(probabilities[0][1])
+
+    shap_values = await asyncio.to_thread(_compute_shap, explainer, X)
     # shap_values shape: (1, n_features) for a single-sample binary classifier
     contributions = shap_values[0]
 
