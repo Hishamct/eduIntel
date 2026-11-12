@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import uuid
@@ -8,6 +9,12 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.config import settings
+from app.observability.quota import (
+    MeteredRequestContext,
+    get_current_metered_context,
+    metered_execution_context,
+)
 from app.ocr import service as ocr_service
 from app.rag.service import ingest_study_material
 from app.student.models import HomeworkSubmission
@@ -213,18 +220,40 @@ async def save_study_material(
     )
 
     db.add(material)
-    await db.flush()
+    await db.commit()
     await db.refresh(material)
 
     if extracted_text:
-        try:
-            ingest_study_material(
-                material_id=material.id,
+        metered_ctx = None
+        if settings.ENABLE_TENANT_AI_QUOTAS or get_current_metered_context() is not None:
+            metered_ctx = MeteredRequestContext(
+                institution_id=institution_id,
+                user_id=teacher_id,
+                endpoint="teacher/study-material/upload",
+                usage_category="ingestion_embeddings",
+                idempotency_key=f"ingest:{material.id}",
+            )
+
+        def _run_ingest():
+            if metered_ctx is not None:
+                with metered_execution_context(metered_ctx):
+                    return ingest_study_material(
+                        material_id=str(material.id),
+                        subject=material.subject,
+                        title=material.title,
+                        extracted_text=extracted_text,
+                        institution_id=str(institution_id),
+                    )
+            return ingest_study_material(
+                material_id=str(material.id),
                 subject=material.subject,
                 title=material.title,
                 extracted_text=extracted_text,
                 institution_id=str(institution_id),
             )
+
+        try:
+            await asyncio.to_thread(_run_ingest)
         except Exception as e:
             logger.warning(f"RAG ingestion failed for study material {material.id}: {e}")
 
