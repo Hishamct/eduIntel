@@ -157,3 +157,16 @@ class AgentTraceLog(Base):
         nullable=False,
         index=True,
     )
+
+
+# Register Stage 7.1 & 7.1R FinOps & Token Quota models on Base.metadata
+from app.observability.quota_models import (  # noqa: E402, F401
+    AIFinancialAdjustment,
+    AIPricingActivation,
+    AIPricingVersion,
+    AIProviderAttempt,
+    AITokenReservation,
+    TenantAIQuota,
+    TenantDailyAIUsage,
+    TenantDailyCategoryUsage,
+)
