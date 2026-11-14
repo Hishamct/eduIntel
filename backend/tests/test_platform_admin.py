@@ -8,6 +8,7 @@ Automated Security and Integration Test Suite for Platform Admin Workstream:
 4. Multi-Institution Suspension & Tenant Isolation Semantics
 """
 
+import os
 import sys
 import uuid
 from pathlib import Path
@@ -191,21 +192,23 @@ class TestReadOnlyCrossTenantRLSPolicy:
 
     @pytest.mark.asyncio
     async def test_cross_tenant_write_rejected_by_rls_with_check(self):
-        conn = await asyncpg.connect("postgresql://eduintel:eduintel_dev@localhost:5432/eduintel")
+        test_url = (
+            os.getenv("TEST_DATABASE_URL", "postgresql://eduintel:eduintel_dev@localhost:5432/eduintel_test")
+            .replace("postgresql+asyncpg://", "postgresql://")
+            .replace("eduintel_app:", "eduintel:")
+        )
+        conn = await asyncpg.connect(test_url)
 
-        # 1. Provision unprivileged application role eduintel_app (NOSUPERUSER, NOBYPASSRLS)
+        # 1. Verify unprivileged application role eduintel_app exists without privilege escalation
         await conn.execute("""
             DO $$
             BEGIN
               IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'eduintel_app') THEN
-                CREATE ROLE eduintel_app WITH LOGIN NOSUPERUSER NOBYPASSRLS;
+                CREATE ROLE eduintel_app WITH LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT;
               END IF;
             END
             $$;
             GRANT USAGE ON SCHEMA public TO eduintel_app;
-            GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO eduintel_app;
-            GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO eduintel_app;
-            GRANT eduintel TO eduintel_app;
         """)
 
         async with conn.transaction():
@@ -320,7 +323,12 @@ class TestReadOnlyCrossTenantRLSPolicy:
     @pytest.mark.asyncio
     async def test_ordinary_tenant_isolation_under_split_policies(self):
         """Verifies ordinary non-admin users cannot read or delete foreign tenant rows."""
-        conn = await asyncpg.connect("postgresql://eduintel:eduintel_dev@localhost:5432/eduintel")
+        test_url = (
+            os.getenv("TEST_DATABASE_URL", "postgresql://eduintel:eduintel_dev@localhost:5432/eduintel_test")
+            .replace("postgresql+asyncpg://", "postgresql://")
+            .replace("eduintel_app:", "eduintel:")
+        )
+        conn = await asyncpg.connect(test_url)
         async with conn.transaction():
             inst_a = uuid.uuid4()
             inst_b = uuid.uuid4()

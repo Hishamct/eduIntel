@@ -175,3 +175,41 @@ This matrix maps user roles to major domain resources in the **target multi-tena
   - Add `Depends(get_current_user)` and `Depends(require_role("teacher", "admin"))` to `/reports/parent-report/{student_id}`.
   - Add `Depends(get_current_user)` and rate limiting to `/ocr/extract`.
 
+---
+
+## 5. Grounded Authorization Matrix Test Suite (`test_authorization_matrix.py`)
+
+In Step 6 of Phase 4, the requirements of this matrix were converted into an authoritative, regression-proof automated test suite located at [`backend/tests/test_authorization_matrix.py`](file:///home/dell/projects/eduIntel/backend/tests/test_authorization_matrix.py).
+
+The test suite contains **58 automated tests** executed on every CI push, structured into four defense tiers:
+
+### 5.1. Tier 1: Platform Admin Governance (14 Tests)
+- **Endpoints**: `GET /institutions`, `POST /institutions`, `GET /institutions/{id}`, `PATCH /institutions/{id}/status`.
+- **Invariants Verified**:
+  - `is_platform_admin=True` identity is strictly required.
+  - Ordinary institutional admins (`admin`), teachers (`teacher`), and students (`student`) receive `403 Forbidden`.
+  - Unauthenticated requests receive `401 Unauthorized`.
+  - Forged JWT claims without the database column check are rejected.
+
+### 5.2. Tier 2: Academic Domain Role Gating (16 Tests)
+- **Endpoints**: `/student/*`, `/teacher/*`, `/admin/*`.
+- **Invariants Verified**:
+  - Students cannot grade assignments (`PATCH /teacher/homework/{id}/grade` $\rightarrow$ 403), publish coursework (`POST /teacher/assignments` $\rightarrow$ 403), or view administrative rosters (`GET /admin/teachers` $\rightarrow$ 403).
+  - Teachers cannot post timetable entries (`POST /admin/timetable` $\rightarrow$ 403), modify student profiles (`PATCH /admin/students/{id}` $\rightarrow$ 403), or disburse salaries (`POST /admin/salary` $\rightarrow$ 403).
+  - Institutional admins cannot submit student homework (`POST /student/homework/upload` $\rightarrow$ 403).
+
+### 5.3. Tier 3: Cross-Tenant IDOR Boundaries (16 Tests)
+- **Endpoints**: `/student/homework/{id}/file`, `/teacher/homework/{id}/file`, `/teacher/homework/{id}/grade`, `/teacher/assignments`, `/admin/timetable`, `/admin/salary`, `/ml/predict/at-risk/{student_id}`.
+- **Invariants Verified**:
+  - A user in Institution A attempting to access, grade, or modify resources belonging to Institution B fails closed (`404 Not Found` or `403 Forbidden`).
+  - PostgreSQL Row-Level Security (`app.current_institution_id`) prevents SQL queries from seeing cross-tenant rows even when explicit primary keys are supplied.
+
+### 5.4. Tier 4: Public & Authentication Invariants (12 Tests)
+- **Endpoints**: `/health`, `/auth/signup`, `/auth/login`, `/auth/password-reset/*`, `/ocr/extract`, `/reports/parent-report/{student_id}`.
+- **Invariants Verified**:
+  - `/health` is publicly accessible (200).
+  - `/auth/signup` is permanently disabled in production (403).
+  - `/ocr/extract` strictly rejects unauthenticated callers (401).
+  - Parent reports enforce relational teacher assignment and refuse arbitrary recipient overrides.
+
+

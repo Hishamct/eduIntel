@@ -719,12 +719,12 @@ class TestAdminAssistantRouteTenantHardening:
                     data = res.json()
                     assert data["answer"] == "Here is the summary."
                     # Verify chat_with_admin_assistant was called with canonical tenant_id
-                    mock_chat.assert_awaited_once_with(
-                        session_id="sess-alpha-01",
-                        query="Student attendance summary",
-                        tenant_id=str(inst_id),
-                        user_id=user_id,
-                    )
+                    assert mock_chat.await_count == 1
+                    call_kwargs = mock_chat.await_args.kwargs
+                    assert call_kwargs["session_id"] == "sess-alpha-01"
+                    assert call_kwargs["query"] == "Student attendance summary"
+                    assert call_kwargs["tenant_id"] == str(inst_id)
+                    assert call_kwargs["user_id"] == user_id
             finally:
                 app.dependency_overrides.clear()
 
@@ -884,12 +884,12 @@ class TestAdminAssistantRouteTenantHardening:
                     )
                     assert res.status_code == 200
                     # Verify chat_with_admin_assistant received Beta's UUID
-                    mock_chat.assert_awaited_once_with(
-                        session_id="sess-beta-01",
-                        query="Fee collection stats",
-                        tenant_id=str(inst_b_id),
-                        user_id=user_id,
-                    )
+                    assert mock_chat.await_count == 1
+                    call_kwargs = mock_chat.await_args.kwargs
+                    assert call_kwargs["session_id"] == "sess-beta-01"
+                    assert call_kwargs["query"] == "Fee collection stats"
+                    assert call_kwargs["tenant_id"] == str(inst_b_id)
+                    assert call_kwargs["user_id"] == user_id
             finally:
                 app.dependency_overrides.clear()
 

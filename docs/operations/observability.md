@@ -105,7 +105,34 @@ The append-only `audit_logs` table provides a chronological record of security a
 
 ---
 
-## 5. Phase 7 Observability Roadmap
+## 5. Phase 5 Dual-Ledger FinOps Subsystem & Automated Reconciliation
+
+Phase 5 Step 3.6 Stage 7 transformed the rudimentary cost logging table into a dual-ledger, production-grade FinOps subsystem:
+
+### 5.1 Dual-Ledger Relational Models (Migrations 0029–0032)
+1. **`tenant_ai_quotas`:** Configures daily token limits, monthly budgets in INR, quota timezone, and subscription tier (`STARTER`, `PROFESSIONAL`, `ENTERPRISE`, `UNLIMITED`).
+2. **`tenant_daily_ai_usage` & `tenant_daily_category_usage`:** Aggregate daily consumption counters separating total tokens from monetary INR costs across categories (`STUDENT_ASSISTANT`, `ADMIN_ASSISTANT`, `RAG_QUERY`, `ML_PREDICTION`).
+3. **`ai_pricing_versions` & `ai_pricing_activations`:** Dynamic, version-controlled pricing matrices defining per-million token rates for prompt and candidate tokens with sequence-ordered activations.
+4. **`ai_token_reservations` & `ai_provider_attempts`:** Full lifecycle tracking of pre-flight reservations (`PENDING` $\to$ `COMMITTED` / `REJECTED` / `EXPIRED` / `SWEPT`) with provider attempt latencies, finish reasons, and HTTP statuses.
+5. **`tenant_quota_provisioning_logs`:** Immutable audit trail governed by a PostgreSQL trigger blocking `UPDATE` or `DELETE` operations.
+
+### 5.2 Canonical Lock Hierarchy & Replacement Accounting
+- **Deadlock-Free State Machine:**
+  $$\text{Level 1 } (\text{tenant\_ai\_quotas}) \to \text{Level 2a } (\text{tenant\_daily\_ai\_usage}) \to \text{Level 2b } (\text{tenant\_daily\_category\_usage}) \to \text{Level 3 } (\text{ai\_token\_reservations})$$
+- **Replacement Accounting Invariant:** Post-flight settlement replaces the estimated reservation with actual confirmed costs ($\Delta = \text{actual} - \text{estimated}$), eliminating double-counting and artificial quota lockouts.
+
+### 5.3 Automated Reconciliation Sweeper (`QuotaReconciliationSweeper`)
+- Automatically identifies stale `PENDING` reservations older than 300 seconds.
+- Uses non-blocking row acquisition: `SELECT ... FOR UPDATE SKIP LOCKED`.
+- Reconciles abandoned capacity back to tenant balances safely without blocking active user traffic.
+
+### 5.4 Operational FinOps Dashboards
+- **Tenant Admin Dashboard (`/admin/finops`):** Real-time daily token utilization, INR burn rate vs monthly budget, category breakdowns, and 80%/100% threshold breach alerts.
+- **Platform Admin Dashboard (`/platform-admin/finops`):** Multi-tenant quota provisioning, plan catalog configuration, manual financial adjustments, suspension/resumption, and compliance audit trail inspection.
+
+---
+
+## 6. Phase 7 Observability Roadmap
 
 In Phase 7 (Observability, APM & Structured Logging), the following enhancements are scheduled:
 1. **Prometheus Metrics Exporter**: Expose `/metrics` endpoint with HTTP request duration histograms, active database connection pool sizes, and cache hit rates.

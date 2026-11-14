@@ -205,7 +205,7 @@ class TestPortalAssistantMemoryIsolationAndStorage:
         shared_session_id = "common-client-session-id"
 
         # Student Alpha asks question in Tenant Alpha
-        with patch("app.agents.portal_assistant.portal_assistant_graph.invoke") as mock_invoke:
+        with patch("app.agents.portal_assistant.portal_assistant_graph.ainvoke", new_callable=AsyncMock) as mock_invoke:
             mock_invoke.return_value = {
                 "answer": "Alpha answer regarding homework",
                 "grounded": True,
@@ -220,7 +220,7 @@ class TestPortalAssistantMemoryIsolationAndStorage:
             )
 
         # Student Beta in Tenant Beta invokes with same session_id
-        with patch("app.agents.portal_assistant.portal_assistant_graph.invoke") as mock_invoke:
+        with patch("app.agents.portal_assistant.portal_assistant_graph.ainvoke", new_callable=AsyncMock) as mock_invoke:
             mock_invoke.return_value = {
                 "answer": "Beta answer",
                 "grounded": True,
@@ -253,7 +253,7 @@ class TestPortalAssistantMemoryIsolationAndStorage:
         user_2 = uuid.uuid4()
         shared_session_id = "same-tenant-sess"
 
-        with patch("app.agents.portal_assistant.portal_assistant_graph.invoke") as mock_invoke:
+        with patch("app.agents.portal_assistant.portal_assistant_graph.ainvoke", new_callable=AsyncMock) as mock_invoke:
             mock_invoke.return_value = {
                 "answer": "Answer 1",
                 "grounded": True,
@@ -267,7 +267,7 @@ class TestPortalAssistantMemoryIsolationAndStorage:
                 user_id=user_1,
             )
 
-        with patch("app.agents.portal_assistant.portal_assistant_graph.invoke") as mock_invoke:
+        with patch("app.agents.portal_assistant.portal_assistant_graph.ainvoke", new_callable=AsyncMock) as mock_invoke:
             mock_invoke.return_value = {
                 "answer": "Answer 2",
                 "grounded": True,

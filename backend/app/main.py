@@ -1,3 +1,5 @@
+import asyncio
+import logging
 import os
 from contextlib import asynccontextmanager
 
@@ -14,6 +16,14 @@ from app.core.config import settings
 from app.core.database import engine
 from app.institutions.router import router as institutions_router
 from app.ml.router import router as ml_router
+from app.observability.quota.errors import (
+    MissingUsagePolicyPendingError,
+    PricingVersionNotFoundError,
+    QuotaExceededError,
+    TenantQuotaNotConfiguredError,
+    TenantQuotaSuspendedError,
+)
+from app.observability.quota.router import router as finops_router
 from app.observability.router import router as observability_router
 from app.ocr.router import router as ocr_router
 from app.rag.router import router as rag_router
@@ -21,6 +31,8 @@ from app.reports.router import router as reports_router
 from app.student.router import router as student_router
 from app.teacher.router import router as teacher_router
 from app.users.router import router as users_router
+
+logger = logging.getLogger("app.main")
 
 
 async def verify_unprivileged_db_user(db_engine=None):
@@ -72,18 +84,41 @@ async def verify_unprivileged_db_user(db_engine=None):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Verify unprivileged database role on startup
+    # 1. Validate guardrail regex patterns at startup (ADR-0010)
+    try:
+        from app.guardrails.redos_guard import validate_patterns_at_startup
+
+        validate_patterns_at_startup()
+    except Exception as exc:
+        raise RuntimeError(f"FATAL: Guardrail pattern validation failed on startup: {exc}") from exc
+
+    # 2. Verify unprivileged database role on startup
     try:
         await verify_unprivileged_db_user()
-    except RuntimeError:
-        raise
     except Exception as exc:
         if settings.ENVIRONMENT == "production":
             raise RuntimeError(
                 f"FATAL: Database privilege check failed to execute in production: {exc}"
             ) from exc
-        print(f"[startup] Database privilege check skipped or deferred: {exc}")
+        print(f"[startup] WARNING: Database privilege check skipped in {settings.ENVIRONMENT} mode: {exc}")
+
+    # 3. Register primary event loop for Stage 7.3 cross-thread metered AI dispatch
+    try:
+        from app.observability.quota.adapter import register_main_event_loop
+
+        register_main_event_loop(asyncio.get_running_loop())
+    except Exception as exc:
+        logger.warning("Failed to register main event loop for metered AI adapter: %s", exc)
+
     yield
+
+    # 3. Shutdown sequence: Graceful ML & Telemetry Quiescence (Phase 5 Step 3.6 Stage 4)
+    try:
+        from app.ml.router import wait_for_ml_quiescence
+
+        await wait_for_ml_quiescence(timeout=5.0)
+    except Exception as exc:
+        logger.warning("[shutdown] Non-fatal error during ML quiescence drain: %s", exc)
 
 
 app = FastAPI(title="EduIntel AI", lifespan=lifespan)
@@ -91,8 +126,8 @@ app = FastAPI(title="EduIntel AI", lifespan=lifespan)
 
 def is_maintenance_mode() -> bool:
     """Checks whether system-wide quiescence / maintenance mode is active."""
-    flag_path = getattr(settings, "MAINTENANCE_FLAG_PATH", "/tmp/eduintel_maintenance.flag")
-    return os.path.exists(flag_path)
+    flag_path = getattr(settings, "MAINTENANCE_FLAG_PATH", None)
+    return bool(flag_path and os.path.exists(flag_path))
 
 
 @app.middleware("http")
@@ -124,6 +159,53 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# -----------------------------------------------------------------------------
+# Stage 7.3 Quota Engine Exception Handlers (Clean HTTP Status Mapping)
+# -----------------------------------------------------------------------------
+
+
+@app.exception_handler(QuotaExceededError)
+async def quota_exceeded_handler(request: Request, exc: QuotaExceededError):
+    return JSONResponse(
+        status_code=429,
+        content={"detail": str(exc), "code": exc.code, "limit_type": exc.limit_type},
+    )
+
+
+@app.exception_handler(TenantQuotaSuspendedError)
+async def tenant_suspended_handler(request: Request, exc: TenantQuotaSuspendedError):
+    return JSONResponse(
+        status_code=403,
+        content={"detail": str(exc), "code": exc.code},
+    )
+
+
+@app.exception_handler(TenantQuotaNotConfiguredError)
+async def tenant_not_configured_handler(request: Request, exc: TenantQuotaNotConfiguredError):
+    return JSONResponse(
+        status_code=403,
+        content={"detail": str(exc), "code": exc.code},
+    )
+
+
+@app.exception_handler(PricingVersionNotFoundError)
+async def pricing_not_found_handler(request: Request, exc: PricingVersionNotFoundError):
+    return JSONResponse(
+        status_code=503,
+        content={"detail": "Active AI pricing configuration unavailable.", "code": exc.code},
+    )
+
+
+@app.exception_handler(MissingUsagePolicyPendingError)
+async def missing_usage_policy_handler(request: Request, exc: MissingUsagePolicyPendingError):
+    return JSONResponse(
+        status_code=502,
+        content={
+            "detail": "Provider usage metadata incomplete and missing-usage settlement policy is pending approval.",
+            "code": exc.code,
+        },
+    )
+
 app.include_router(auth_router)
 app.include_router(users_router)
 app.include_router(institutions_router)
@@ -137,6 +219,7 @@ app.include_router(agents_router)
 app.include_router(ml_router)
 app.include_router(reports_router)
 app.include_router(observability_router)
+app.include_router(finops_router)
 
 
 @app.get("/health")

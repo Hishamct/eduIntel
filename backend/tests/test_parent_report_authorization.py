@@ -370,7 +370,7 @@ class TestMultiFactorTeacherAuthorization:
                         student_id=str(student_user.id),
                         student_name=student_user.name,
                         parent_email=student_profile.parent_email,
-                        db=mock_db,
+                        db=None,
                         generated_by_user_id=teacher_user.id,
                         institution_id=teacher_user.institution_id,
                     )
@@ -480,7 +480,7 @@ class TestAdminAuthorizationAndDeliveryIntegrity:
                         student_id=str(student_user.id),
                         student_name=student_user.name,
                         parent_email=student_profile.parent_email,
-                        db=mock_db,
+                        db=None,
                         generated_by_user_id=admin_user.id,
                         institution_id=admin_user.institution_id,
                     )

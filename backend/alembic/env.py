@@ -18,13 +18,18 @@ from app.teacher import models as teacher_models  # noqa: F401
 from app.admin import models as admin_models  # noqa: F401
 from app.observability import models as observability_models  # noqa: F401
 from app.announcements import models as announcement_models  # noqa: F401
+from app.agents import models as agents_models  # noqa: F401
 target_metadata = Base.metadata
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
 
 # Allow environment variable override for DATABASE_URL (12-factor standard)
-if os.environ.get("DATABASE_URL"):
+if os.environ.get("MIGRATION_DATABASE_URL"):
+    config.set_main_option("sqlalchemy.url", os.environ["MIGRATION_DATABASE_URL"])
+elif (os.environ.get("ENVIRONMENT") == "testing" or os.environ.get("EDUINTEL_TEST_MODE") == "true") and os.environ.get("TEST_DATABASE_URL"):
+    config.set_main_option("sqlalchemy.url", os.environ["TEST_DATABASE_URL"])
+elif os.environ.get("DATABASE_URL"):
     config.set_main_option("sqlalchemy.url", os.environ["DATABASE_URL"])
 
 # Interpret the config file for Python logging.

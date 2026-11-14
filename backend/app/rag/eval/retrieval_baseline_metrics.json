@@ -1,0 +1,298 @@
+{
+  "timestamp": "2026-11-06T17:13:57Z",
+  "eval_set": "eval_set.json",
+  "collections": {
+    "portal_help_docs": 6,
+    "study_materials": 38
+  },
+  "global_vector_retrieval": {
+    "hit_rate_at_1": 1.0,
+    "hit_rate_at_3": 1.0,
+    "mean_reciprocal_rank": 1.0,
+    "hits_1_count": 11,
+    "hits_3_count": 11,
+    "total_standard": 11,
+    "total_adversarial": 3,
+    "latency_ms": {
+      "min": 433.22655700103496,
+      "mean": 511.6828665712611,
+      "p50": 492.8118909992918,
+      "p95": 735.615534002136,
+      "p99": 735.615534002136,
+      "max": 735.615534002136
+    },
+    "results": [
+      {
+        "query": "How do I submit my homework?",
+        "collection": "portal_help_docs",
+        "type": "Standard",
+        "latency_ms": 598.5824119998142,
+        "rank": 1,
+        "rr": 1.0,
+        "top_distance": 0.3584352433681488
+      },
+      {
+        "query": "How do I ask a doubt on the platform?",
+        "collection": "portal_help_docs",
+        "type": "Standard",
+        "latency_ms": 524.6101099983207,
+        "rank": 1,
+        "rr": 1.0,
+        "top_distance": 0.292866975069046
+      },
+      {
+        "query": "Where can I find study materials uploaded by my teachers?",
+        "collection": "portal_help_docs",
+        "type": "Standard",
+        "latency_ms": 485.8016079997469,
+        "rank": 1,
+        "rr": 1.0,
+        "top_distance": 0.2313562035560608
+      },
+      {
+        "query": "What does the Self-Evaluation page show me?",
+        "collection": "portal_help_docs",
+        "type": "Standard",
+        "latency_ms": 735.615534002136,
+        "rank": 1,
+        "rr": 1.0,
+        "top_distance": 0.3541496992111206
+      },
+      {
+        "query": "What information appears on my dashboard right after I log in?",
+        "collection": "portal_help_docs",
+        "type": "Standard",
+        "latency_ms": 505.4384299983212,
+        "rank": 1,
+        "rr": 1.0,
+        "top_distance": 0.41533559560775757
+      },
+      {
+        "query": "I forgot my password, what should I do?",
+        "collection": "portal_help_docs",
+        "type": "Standard",
+        "latency_ms": 471.63558100146474,
+        "rank": 1,
+        "rr": 1.0,
+        "top_distance": 0.5488201379776001
+      },
+      {
+        "query": "Can I pay my tuition fees through the student portal?",
+        "collection": "portal_help_docs",
+        "type": "Adversarial",
+        "latency_ms": 489.2614579985093,
+        "rank": "N/A (OOD)",
+        "rr": null,
+        "top_distance": 0.8795081377029419
+      },
+      {
+        "query": "What is the domain of the sine and cosine functions?",
+        "collection": "study_materials",
+        "type": "Standard",
+        "latency_ms": 492.8118909992918,
+        "rank": 1,
+        "rr": 1.0,
+        "top_distance": 0.49715328216552734
+      },
+      {
+        "query": "How does sin x behave as x increases from 0 to pi/2?",
+        "collection": "study_materials",
+        "type": "Standard",
+        "latency_ms": 488.6872509996465,
+        "rank": 1,
+        "rr": 1.0,
+        "top_distance": 0.49883776903152466
+      },
+      {
+        "query": "What are the key areas covered in the Algebra study notes?",
+        "collection": "study_materials",
+        "type": "Standard",
+        "latency_ms": 499.7627230004582,
+        "rank": 1,
+        "rr": 1.0,
+        "top_distance": 0.29250890016555786
+      },
+      {
+        "query": "What is the most common root cause of difficulty in Trigonometry, according to the study notes?",
+        "collection": "study_materials",
+        "type": "Standard",
+        "latency_ms": 433.22655700103496,
+        "rank": 1,
+        "rr": 1.0,
+        "top_distance": 0.4228227436542511
+      },
+      {
+        "query": "What do the Acids & Bases study notes cover?",
+        "collection": "study_materials",
+        "type": "Standard",
+        "latency_ms": 456.14360999752535,
+        "rank": 1,
+        "rr": 1.0,
+        "top_distance": 0.25318920612335205
+      },
+      {
+        "query": "Explain Newton's second law of motion in detail, including its mathematical derivation.",
+        "collection": "study_materials",
+        "type": "Adversarial",
+        "latency_ms": 466.14131800015457,
+        "rank": "N/A (OOD)",
+        "rr": null,
+        "top_distance": 0.8446466326713562
+      },
+      {
+        "query": "Summarize the theory of relativity.",
+        "collection": "study_materials",
+        "type": "Adversarial",
+        "latency_ms": 515.8416490012314,
+        "rank": "N/A (OOD)",
+        "rr": null,
+        "top_distance": 0.868880569934845
+      }
+    ]
+  },
+  "tenant_filtered_retrieval": {
+    "hit_rate_at_1": 0.5454545454545454,
+    "hit_rate_at_3": 0.5454545454545454,
+    "mean_reciprocal_rank": 0.5454545454545454,
+    "hits_1_count": 6,
+    "hits_3_count": 6,
+    "total_standard": 11,
+    "total_adversarial": 3,
+    "latency_ms": {
+      "min": 461.88264100055676,
+      "mean": 481.6177802856276,
+      "p50": 484.13179899944225,
+      "p95": 501.8154669996875,
+      "p99": 501.8154669996875,
+      "max": 501.8154669996875
+    },
+    "results": [
+      {
+        "query": "How do I submit my homework?",
+        "collection": "portal_help_docs",
+        "type": "Standard",
+        "latency_ms": 469.2617170003359,
+        "rank": 1,
+        "rr": 1.0,
+        "top_distance": 0.3584352433681488
+      },
+      {
+        "query": "How do I ask a doubt on the platform?",
+        "collection": "portal_help_docs",
+        "type": "Standard",
+        "latency_ms": 461.88264100055676,
+        "rank": 1,
+        "rr": 1.0,
+        "top_distance": 0.292866975069046
+      },
+      {
+        "query": "Where can I find study materials uploaded by my teachers?",
+        "collection": "portal_help_docs",
+        "type": "Standard",
+        "latency_ms": 479.3797230013297,
+        "rank": 1,
+        "rr": 1.0,
+        "top_distance": 0.2313562035560608
+      },
+      {
+        "query": "What does the Self-Evaluation page show me?",
+        "collection": "portal_help_docs",
+        "type": "Standard",
+        "latency_ms": 492.50157799906447,
+        "rank": 1,
+        "rr": 1.0,
+        "top_distance": 0.3541496992111206
+      },
+      {
+        "query": "What information appears on my dashboard right after I log in?",
+        "collection": "portal_help_docs",
+        "type": "Standard",
+        "latency_ms": 487.84223300026497,
+        "rank": 1,
+        "rr": 1.0,
+        "top_distance": 0.41533559560775757
+      },
+      {
+        "query": "I forgot my password, what should I do?",
+        "collection": "portal_help_docs",
+        "type": "Standard",
+        "latency_ms": 501.8154669996875,
+        "rank": 1,
+        "rr": 1.0,
+        "top_distance": 0.5488201379776001
+      },
+      {
+        "query": "Can I pay my tuition fees through the student portal?",
+        "collection": "portal_help_docs",
+        "type": "Adversarial",
+        "latency_ms": 479.6872659971996,
+        "rank": "N/A (OOD)",
+        "rr": null,
+        "top_distance": 0.8795081377029419
+      },
+      {
+        "query": "What is the domain of the sine and cosine functions?",
+        "collection": "study_materials",
+        "type": "Standard",
+        "latency_ms": 470.146425999701,
+        "rank": "Miss (>3)",
+        "rr": 0.0,
+        "top_distance": null
+      },
+      {
+        "query": "How does sin x behave as x increases from 0 to pi/2?",
+        "collection": "study_materials",
+        "type": "Standard",
+        "latency_ms": 463.29859199977363,
+        "rank": "Miss (>3)",
+        "rr": 0.0,
+        "top_distance": null
+      },
+      {
+        "query": "What are the key areas covered in the Algebra study notes?",
+        "collection": "study_materials",
+        "type": "Standard",
+        "latency_ms": 479.31108299962943,
+        "rank": "Miss (>3)",
+        "rr": 0.0,
+        "top_distance": null
+      },
+      {
+        "query": "What is the most common root cause of difficulty in Trigonometry, according to the study notes?",
+        "collection": "study_materials",
+        "type": "Standard",
+        "latency_ms": 486.97459799950593,
+        "rank": "Miss (>3)",
+        "rr": 0.0,
+        "top_distance": null
+      },
+      {
+        "query": "What do the Acids & Bases study notes cover?",
+        "collection": "study_materials",
+        "type": "Standard",
+        "latency_ms": 494.63758899946697,
+        "rank": "Miss (>3)",
+        "rr": 0.0,
+        "top_distance": null
+      },
+      {
+        "query": "Explain Newton's second law of motion in detail, including its mathematical derivation.",
+        "collection": "study_materials",
+        "type": "Adversarial",
+        "latency_ms": 484.13179899944225,
+        "rank": "N/A (OOD)",
+        "rr": null,
+        "top_distance": null
+      },
+      {
+        "query": "Summarize the theory of relativity.",
+        "collection": "study_materials",
+        "type": "Adversarial",
+        "latency_ms": 491.7782120028278,
+        "rank": "N/A (OOD)",
+        "rr": null,
+        "top_distance": null
+      }
+    ]
+  }
+}

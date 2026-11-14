@@ -20,13 +20,13 @@ This document specifies the migration architecture, revision history, and schema
       await connectable.dispose()
   ```
 - **Tracking Table**: Current migration state is tracked in the `alembic_version` table in PostgreSQL.
-- **Current Head Revision**: `c9e0f2a1b3c4` (`0025_c9e0f2a1b3c4_split_rls_policies_for_read_write_isolation.py`).
+- **Current Head Revision**: `c3d4e5f6a7b8` (`0032_c3d4e5f6a7b8_add_ai_quota_plans_and_provisioning.py`).
 
 ---
 
-## 2. Migration Revision History (25 Revisions)
+## 2. Migration Revision History (32 Revisions)
 
-Below is the chronological sequence of migrations shaping the current database schema, organized with standardized 4-digit sequential numeric prefixes (`0001_` through `0025_`):
+Below is the chronological sequence of migrations shaping the current database schema, organized with standardized 4-digit sequential numeric prefixes (`0001_` through `0032_`):
 
 | Step | Revision ID | Down Revision | Script Name | Core DDL Operations |
 |:---:|---|---|---|---|
@@ -54,7 +54,14 @@ Below is the chronological sequence of migrations shaping the current database s
 | **22**| `f6b8c0d2e4a6` | `e5a7b9c1d3f5` | `0022_f6b8c0d2e4a6_enable_postgresql_rls.py` | Enables and forces PostgreSQL Row-Level Security (RLS) on all 17 tenant-owned tables with `app.current_institution_id` session policies for unprivileged role `eduintel`. |
 | **23**| `a7c8e9d0b1f2` | `f6b8c0d2e4a6` | `0023_a7c8e9d0b1f2_add_multi_tenant_composite_indexes.py` | Creates 7 composite multi-tenant B-tree indexes across `attendance_records`, `homework_submissions`, `exam_results`, and `fee_records` with `institution_id` leftmost prefix. |
 | **24**| `b8d9f0e1c2a3` | `a7c8e9d0b1f2` | `0024_b8d9f0e1c2a3_add_platform_admin_and_institution_contact.py` | Adds `is_platform_admin` column to `users` with B-tree index, adds `contact_email` to `institutions`, and reconfigures `tenant_isolation_policy` to support platform admin read access. |
-| **25**| `c9e0f2a1b3c4` | `b8d9f0e1c2a3` | `0025_c9e0f2a1b3c4_split_rls_policies_for_read_write_isolation.py` | **(HEAD)** Replaces `tenant_isolation_policy` across all 17 tables with command-specific policies (`FOR SELECT` with platform admin read bypass vs `FOR INSERT`, `FOR UPDATE`, `FOR DELETE` strictly locked to `app.current_institution_id`), permanently blocking cross-tenant deletes. |
+| **25**| `c9e0f2a1b3c4` | `b8d9f0e1c2a3` | `0025_c9e0f2a1b3c4_split_rls_policies_for_read_write_isolation.py` | Replaces `tenant_isolation_policy` across all 17 tables with command-specific policies (`FOR SELECT` with platform admin read bypass vs `FOR INSERT`, `FOR UPDATE`, `FOR DELETE` strictly locked to `app.current_institution_id`), permanently blocking cross-tenant deletes. |
+| **26**| `d0e1f2a3b4c5` | `c9e0f2a1b3c4` | `0026_d0e1f2a3b4c5_add_tool_execution_records_table.py` | Creates `tool_execution_records` with multi-tenant RLS, monotonic lease fencing (`lease_generation`), tool arguments hash, and turn execution tracking. |
+| **27**| `e1f2a3b4c5d6` | `d0e1f2a3b4c5` | `0027_e1f2a3b4c5d6_add_agent_sessions_and_messages_tables.py` | Creates `agent_sessions` and `agent_session_messages` with multi-tenant RLS, cascade deletes, 4-stage lifecycle support, and message order indexes. |
+| **28**| `c1d2e3f4a5b6` | `e1f2a3b4c5d6` | `0028_c1d2e3f4a5b6_add_assistant_client_turn_unique_index.py` | Adds partial unique index `uq_assistant_client_turn_session` on `agent_session_messages` enforcing client turn uniqueness and checkout idempotency. |
+| **29**| `f2a3b4c5d6e7` | `c1d2e3f4a5b6` | `0029_f2a3b4c5d6e7_add_tenant_ai_quotas_and_finops_ledger.py` | Creates dual-ledger FinOps schema: `tenant_ai_quotas`, `tenant_daily_ai_usage`, `tenant_daily_category_usage`, `ai_pricing_versions`, `ai_pricing_activations`, `ai_token_reservations`, `ai_provider_attempts`, `ai_financial_adjustments` with hardware RLS. |
+| **30**| `a1b2c3d4e5f6` | `f2a3b4c5d6e7` | `0030_a1b2c3d4e5f6_remediate_stage7_1_security_and_constraints.py` | Remediates Stage 7.1 security: enforces strict positive constraints, cascade controls, and tenant foreign keys. |
+| **31**| `b2c3d4e5f6a7` | `a1b2c3d4e5f6` | `0031_b2c3d4e5f6a7_stage7_1r2_final_hardening.py` | Hardens `ai_pricing_activations` with check constraint `activation_seq >= 1` and historical activation sequence ordering. |
+| **32**| `c3d4e5f6a7b8` | `b2c3d4e5f6a7` | `0032_c3d4e5f6a7b8_add_ai_quota_plans_and_provisioning.py` | **(HEAD)** Creates `ai_quota_plans` catalog, seeds standard subscription tiers, creates `tenant_quota_provisioning_logs` with PostgreSQL immutability trigger. |
 
 ---
 

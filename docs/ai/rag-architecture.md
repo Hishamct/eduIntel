@@ -65,11 +65,12 @@ Vector persistence is managed by ChromaDB ([`backend/app/rag/service.py`](file:/
 2. **Text Extraction**:
    - For digital PDFs: `pypdf.PdfReader` extracts clean text streams page by page.
    - For image uploads or scanned PDFs: `backend/app/ocr/service.py` executes image preprocessing and PyTesseract OCR.
-3. **Text Chunking**:
-   - Extracted text is split using a recursive character strategy:
-     - Target chunk size: **1,000 characters**.
-     - Chunk overlap: **200 characters** (prevents boundary information loss).
-     - Separators: `["\n\n", "\n", " ", ""]`.
+3. **Text Chunking (Document-Aware)**:
+   - Extracted text is split using `RecursiveCharacterTextSplitter` with mathematical and structural preservation:
+     - Target chunk size: **1,200 characters** (overlap: 150 characters).
+     - **LaTeX Preservation:** Bounded formulas (`$$...$$` and `$...$`) are preserved intact without mid-formula chunk splits.
+     - **Table Header Re-injection:** Markdown and text table headers are automatically re-injected into split rows.
+     - **Metadata Header Injection:** Document title, subject, and section headers are prepended to every chunk to maximize semantic cosine similarity.
 4. **Embedding Generation & Vector Upsert**:
    - Batch vectors are requested from Google Gemini Embeddings API.
    - Vectors and metadata are upserted into the `study_materials` ChromaDB collection.
@@ -77,7 +78,16 @@ Vector persistence is managed by ChromaDB ([`backend/app/rag/service.py`](file:/
 
 ---
 
-## 4. Retrieval & Socratic Query Synthesis
+## 4. Request-Level Authorized Context Snapshot Policy (Document Deletion)
+
+To safely handle document deletion without mid-stream conversational corruption or stale retrieval:
+1. **Immediate New Retrieval Exclusion:** The instant a document is marked `DELETION_PENDING`, ChromaDB queries exclude its chunk IDs fail-closed.
+2. **Pre-Dispatch Freshness Gate:** Queries that retrieved chunks but have not yet dispatched to the LLM verify document status; chunks belonging to pending deletions are stripped or gracefully refused.
+3. **Authorized In-Flight Snapshot:** Requests that were already dispatched to the LLM are allowed to complete using their authorized context snapshot, avoiding abrupt UI crashes for already-rendered tokens.
+
+---
+
+## 5. Retrieval & Socratic Query Synthesis
 
 When a student queries the doubt forum (`/api/student/doubts/{id}/messages`):
 1. **Sanitization**: The student's message undergoes PII redaction and prompt injection scanning.
@@ -101,9 +111,20 @@ When a student queries the doubt forum (`/api/student/doubts/{id}/messages`):
 
 ---
 
-## 5. RAG Evaluation with Ragas
+## 6. RAG Evaluation: Ragas & Offline CI Hermetic Benchmark
 
-To monitor RAG retrieval accuracy and prevent hallucinations, an offline evaluation harness is implemented in [`backend/app/rag/eval/eval_rag.py`](file:///home/dell/projects/eduIntel/backend/app/rag/eval/eval_rag.py):
+EduIntel operates two tiers of evaluation:
+
+### 6.1 Offline Hermetic CI Benchmark (Phase 5 Step 3.5 & Step 3.6 Stage 5R)
+Executed automatically under CI network guards (`eval_rag_retrieval_offline.py`):
+- Runs with **0 external cloud dependencies**.
+- Asserts retrieval quality thresholds:
+  - **Hit Rate@3**: $\ge 0.80$
+  - **Mean Reciprocal Rank (MRR)**: $\ge 0.80$
+  - **Maximum Vector Distance**: $\le 0.45$
+
+### 6.2 Periodic Ragas Evaluation
+To continuously monitor generation quality in production:
 
 | Ragas Metric | Measurement Objective | Target Threshold |
 |---|---|:---:|
@@ -111,4 +132,10 @@ To monitor RAG retrieval accuracy and prevent hallucinations, an offline evaluat
 | **Context Precision** | Measures whether retrieved context chunks are strictly relevant to the question. | $\ge 0.80$ |
 | **Context Recall** | Measures whether all ground-truth facts required to answer the question were retrieved. | $\ge 0.80$ |
 | **Answer Relevance** | Measures whether the answer directly addresses the student's doubt. | $\ge 0.85$ |
+
+---
+
+## 7. Quota Scoping & Bounded Generation
+
+All RAG retrieval queries dispatched to `/rag/query` or via agent workflows invoke `QuotaIntegrationService` under category `RAG_QUERY`. Tokens are pre-reserved against `tenant_ai_quotas` and settled upon completion with replacements of estimated reservations by actual provider telemetry.
 

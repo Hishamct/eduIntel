@@ -1,0 +1,61 @@
+{
+  "model_name": "at_risk",
+  "model_version": "1.0.0",
+  "artifact_filename": "at_risk_model.joblib",
+  "sha256": "7bb3f75f281242963602eff52b793a5aa570ebdcd9d5c61ff43c12778c14ee16",
+  "algorithm": "xgboost.XGBClassifier",
+  "feature_schema_version": "1.0",
+  "created_at": "2026-11-06T00:00:00Z",
+  "features": [
+    {
+      "name": "attendance_rate",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "order": 0
+    },
+    {
+      "name": "homework_submission_rate",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "order": 1
+    },
+    {
+      "name": "avg_score_overall",
+      "type": "float",
+      "min": 0.0,
+      "max": 100.0,
+      "order": 2
+    },
+    {
+      "name": "score_trend",
+      "type": "float",
+      "min": -100.0,
+      "max": 100.0,
+      "order": 3
+    },
+    {
+      "name": "doubt_thread_count",
+      "type": "float",
+      "min": 0.0,
+      "max": 10000.0,
+      "order": 4
+    }
+  ],
+  "compatibility": {
+    "python": ">=3.11",
+    "xgboost": ">=2.0.0"
+  },
+  "metadata": {
+    "domain": "eduintel_academic_risk",
+    "release_stage": "production"
+  },
+  "key_id": "eduintel-ml-signer-2026-v1",
+  "reference_distribution": {
+    "filename": "at_risk_reference_distribution.json",
+    "sha256": "d5b3edd4c8a677daeb567f97622d48480f51dd84af05c1da7befa672665ad0bf",
+    "version": "1.0.0"
+  },
+  "signature": "MHrkmHioKdrNwLJA86nBqwJLszqsxifyxfxJT6lq2WK37XjVAx1QUBTL6EkSAHMrJEyELpvgTUuU7QkCpzdTBg=="
+}

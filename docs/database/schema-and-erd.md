@@ -1,6 +1,6 @@
 # EduIntel AI — Database Schema and Entity-Relationship Diagram (ERD)
 
-This document provides the definitive architectural specification for EduIntel's **21 PostgreSQL application tables**, their column constraints, foreign key relationships, indexes, Row-Level Security (RLS) enforcement, and entity-relationship models on branch `develop/production-readiness`.
+This document provides the definitive architectural specification for EduIntel's **34 PostgreSQL application tables**, their column constraints, foreign key relationships, indexes, Row-Level Security (RLS) enforcement, and entity-relationship models on branch `develop/production-readiness`.
 
 ---
 
@@ -592,4 +592,145 @@ In addition to the 21 Alembic application domain tables, the database maintains 
   - `created_at`: `TIMESTAMPTZ` (Auto UTC).
 
 *Purpose:* This table is dynamically updated by `scripts/dr_helper.py record-marker` immediately prior to backup capture to store a committed workload-grounded transaction marker. During restore drills, verifying this marker proves that all transactions committed up to the quiescence boundary are recoverable, explaining why restored databases contain **22 tables** (21 application domain tables + 1 operational recovery table).
+
+---
+
+## 6. Phase 5 Infrastructure, Session & FinOps Ledger Tables (Migrations 0026–0032)
+
+Phase 5 introduced 13 new application tables supporting tool idempotency, durable LangGraph sessions, and dual-ledger token quotas with financial accounting:
+
+### 6.1 Tool Execution Idempotency Table (Migration 0026)
+- **`tool_execution_records`**:
+  - `id`: `UUID` (Primary Key).
+  - `institution_id`: `UUID` (FK $\to$ `institutions.id`, NOT NULL).
+  - `user_id`: `UUID` (FK $\to$ `users.id`, NOT NULL).
+  - `tool_call_id`: `VARCHAR(100)` (NOT NULL).
+  - `tool_name`: `VARCHAR(100)` (NOT NULL).
+  - `arguments_hash`: `VARCHAR(64)` (SHA-256 of canonical arguments, NOT NULL).
+  - `lease_generation`: `INTEGER` (Monotonic fencing counter, NOT NULL DEFAULT 1).
+  - `status`: `VARCHAR(30)` (`PENDING`, `COMPLETED`, `FAILED`, `UNCERTAIN`).
+  - `result_payload`: `TEXT` (Sanitized output).
+  - `created_at` / `updated_at`: `TIMESTAMPTZ`.
+  - *Indexes & RLS:* Multi-tenant command-specific RLS policies; unique constraint on `(institution_id, tool_call_id)`.
+
+### 6.2 Durable Agent Session Store Tables (Migration 0027 & 0028)
+- **`agent_sessions`**:
+  - `id`: `UUID` (Primary Key).
+  - `institution_id`: `UUID` (FK $\to$ `institutions.id`, NOT NULL).
+  - `user_id`: `UUID` (FK $\to$ `users.id`, NOT NULL).
+  - `assistant_type`: `VARCHAR(50)` (`student_portal`, `admin_reporting`).
+  - `is_deleted`: `BOOLEAN` (Soft-delete flag).
+  - `last_activity_at`: `TIMESTAMPTZ` (Inactivity expiration anchor).
+  - `created_at` / `updated_at`: `TIMESTAMPTZ`.
+  - *RLS:* Protected by `institution_id` RLS and ownership verification.
+- **`agent_session_messages`**:
+  - `id`: `UUID` (Primary Key).
+  - `session_id`: `UUID` (FK $\to$ `agent_sessions.id` ON DELETE CASCADE, NOT NULL).
+  - `institution_id`: `UUID` (FK $\to$ `institutions.id`, NOT NULL).
+  - `turn_number`: `INTEGER` (Sequential turn counter, NOT NULL).
+  - `client_turn_id`: `VARCHAR(100)` (Client-supplied turn UUID for idempotency).
+  - `role`: `VARCHAR(20)` (`user`, `assistant`, `system`).
+  - `content`: `TEXT` (Message body).
+  - `status`: `VARCHAR(20)` (`COMPLETED`, `TRUNCATED`, `BLOCKED`, `FAILED`).
+  - `token_count`: `INTEGER`.
+  - `created_at`: `TIMESTAMPTZ`.
+  - *Indexes:* Unique partial index `uq_assistant_client_turn_session` on `(session_id, client_turn_id)` where `role = 'assistant' AND client_turn_id IS NOT NULL` (Migration 0028).
+
+### 6.3 Dual-Ledger AI Quota & FinOps Accounting Tables (Migrations 0029, 0030, 0031)
+- **`tenant_ai_quotas`**:
+  - `id`: `UUID` (Primary Key).
+  - `institution_id`: `UUID` (FK $\to$ `institutions.id` UNIQUE, NOT NULL).
+  - `daily_token_limit`: `INTEGER` (NOT NULL, check $> 0$).
+  - `monthly_budget_inr`: `NUMERIC(10, 2)` (NOT NULL, check $> 0$).
+  - `plan_tier`: `VARCHAR(50)` (`STARTER`, `PROFESSIONAL`, `ENTERPRISE`, `UNLIMITED`).
+  - `quota_timezone`: `VARCHAR(50)` (NOT NULL DEFAULT `'Asia/Kolkata'`).
+  - `is_active`: `BOOLEAN` (NOT NULL DEFAULT TRUE).
+  - `created_at` / `updated_at`: `TIMESTAMPTZ`.
+  - *Locking:* Canonical **Level 1** row lock in transaction state machine (`SELECT ... FOR UPDATE`).
+- **`tenant_daily_ai_usage`**:
+  - `id`: `UUID` (Primary Key).
+  - `institution_id`: `UUID` (FK $\to$ `institutions.id`, NOT NULL).
+  - `usage_date`: `DATE` (Tenant-local midnight date, NOT NULL).
+  - `total_input_tokens` / `total_output_tokens` / `total_tokens`: `INTEGER` (NOT NULL DEFAULT 0).
+  - `total_cost_inr`: `NUMERIC(12, 4)` (NOT NULL DEFAULT 0).
+  - `request_count`: `INTEGER` (NOT NULL DEFAULT 0).
+  - `unique (institution_id, usage_date)`.
+  - *Locking:* Canonical **Level 2a** row lock.
+- **`tenant_daily_category_usage`**:
+  - `id`: `UUID` (Primary Key).
+  - `institution_id`: `UUID` (FK $\to$ `institutions.id`, NOT NULL).
+  - `usage_date`: `DATE` (NOT NULL).
+  - `category`: `VARCHAR(50)` (`STUDENT_ASSISTANT`, `ADMIN_ASSISTANT`, `RAG_QUERY`, `ML_PREDICTION`).
+  - `total_tokens`: `INTEGER` (NOT NULL DEFAULT 0).
+  - `total_cost_inr`: `NUMERIC(12, 4)` (NOT NULL DEFAULT 0).
+  - `unique (institution_id, usage_date, category)`.
+  - *Locking:* Canonical **Level 2b** row lock, sorted by category name to avoid deadlocks.
+- **`ai_pricing_versions`**:
+  - `id`: `VARCHAR(50)` (Primary Key, e.g. `'v1.0'`).
+  - `provider`: `VARCHAR(50)` (NOT NULL, `'gemini'`, `'groq'`).
+  - `model`: `VARCHAR(100)` (NOT NULL).
+  - `prompt_token_rate_per_m`: `NUMERIC(10, 4)` (NOT NULL).
+  - `candidate_token_rate_per_m`: `NUMERIC(10, 4)` (NOT NULL).
+  - `created_at`: `TIMESTAMPTZ`.
+- **`ai_pricing_activations`**:
+  - `id`: `UUID` (Primary Key).
+  - `activation_seq`: `INTEGER` (Sequential counter, check $\ge 1$, NOT NULL).
+  - `effective_from`: `TIMESTAMPTZ` (NOT NULL).
+  - `pricing_version_id`: `VARCHAR(50)` (FK $\to$ `ai_pricing_versions.id`, NOT NULL).
+  - `activated_by`: `UUID` (FK $\to$ `users.id`, NOT NULL).
+- **`ai_token_reservations`**:
+  - `id`: `UUID` (Primary Key).
+  - `institution_id`: `UUID` (FK $\to$ `institutions.id`, NOT NULL).
+  - `user_id`: `UUID` (FK $\to$ `users.id`, NOT NULL).
+  - `category`: `VARCHAR(50)` (NOT NULL).
+  - `provider`: `VARCHAR(50)` (NOT NULL).
+  - `model`: `VARCHAR(100)` (NOT NULL).
+  - `estimated_input_tokens` / `estimated_output_tokens` / `estimated_total_tokens`: `INTEGER` (NOT NULL).
+  - `estimated_cost_inr`: `NUMERIC(10, 4)` (NOT NULL).
+  - `actual_input_tokens` / `actual_output_tokens` / `actual_total_tokens`: `INTEGER`.
+  - `actual_cost_inr`: `NUMERIC(10, 4)`.
+  - `status`: `VARCHAR(30)` (`PENDING`, `COMMITTED`, `REJECTED`, `EXPIRED`, `SWEPT`).
+  - `created_at` / `reconciled_at`: `TIMESTAMPTZ`.
+  - *Locking:* Canonical **Level 3** row lock.
+- **`ai_provider_attempts`**:
+  - `id`: `UUID` (Primary Key).
+  - `reservation_id`: `UUID` (FK $\to$ `ai_token_reservations.id` ON DELETE CASCADE, NOT NULL).
+  - `attempt_number`: `INTEGER` (NOT NULL).
+  - `provider`: `VARCHAR(50)` (NOT NULL).
+  - `model`: `VARCHAR(100)` (NOT NULL).
+  - `http_status`: `INTEGER`.
+  - `latency_ms`: `INTEGER`.
+  - `finish_reason`: `VARCHAR(50)`.
+  - `created_at`: `TIMESTAMPTZ`.
+- **`ai_financial_adjustments`**:
+  - `id`: `UUID` (Primary Key).
+  - `institution_id`: `UUID` (FK $\to$ `institutions.id`, NOT NULL).
+  - `adjustment_type`: `VARCHAR(50)` (`MANUAL_CREDIT`, `MANUAL_DEBIT`, `RECONCILIATION_OVERAGE`).
+  - `cost_inr_delta`: `NUMERIC(10, 4)` (NOT NULL).
+  - `reason`: `TEXT` (NOT NULL).
+  - `adjusted_by`: `UUID` (FK $\to$ `users.id`, NOT NULL).
+  - `created_at`: `TIMESTAMPTZ`.
+
+### 6.4 Quota Plans Catalog & Provisioning Audit Trail (Migration 0032)
+- **`ai_quota_plans`**:
+  - `id`: `UUID` (Primary Key).
+  - `plan_code`: `VARCHAR(50)` (UNIQUE, NOT NULL, e.g. `'STARTER'`, `'PROFESSIONAL'`).
+  - `name`: `VARCHAR(100)` (NOT NULL).
+  - `daily_token_limit`: `INTEGER` (NOT NULL, check $> 0$).
+  - `monthly_budget_inr`: `NUMERIC(10, 2)` (NOT NULL, check $> 0$).
+  - `is_active`: `BOOLEAN` (NOT NULL DEFAULT TRUE).
+  - `created_at` / `updated_at`: `TIMESTAMPTZ`.
+- **`tenant_quota_provisioning_logs`**:
+  - `id`: `UUID` (Primary Key).
+  - `institution_id`: `UUID` (FK $\to$ `institutions.id`, NOT NULL).
+  - `action`: `VARCHAR(50)` (`PROVISION`, `UPDATE_LIMITS`, `SUSPEND`, `RESUME`, `MANUAL_SETTLE`).
+  - `previous_plan_tier`: `VARCHAR(50)`.
+  - `new_plan_tier`: `VARCHAR(50)`.
+  - `previous_daily_tokens` / `new_daily_tokens`: `INTEGER`.
+  - `previous_monthly_inr` / `new_monthly_inr`: `NUMERIC(10, 2)`.
+  - `reason`: `TEXT`.
+  - `performed_by`: `UUID` (FK $\to$ `users.id`, NOT NULL).
+  - `created_at`: `TIMESTAMPTZ` (NOT NULL DEFAULT NOW()).
+  - *Trigger:* PostgreSQL `trg_prevent_quota_log_mutation` raising exception on any `UPDATE` or `DELETE`, guaranteeing an immutable append-only compliance audit trail.
+
 

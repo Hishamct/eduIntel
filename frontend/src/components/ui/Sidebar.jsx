@@ -8,6 +8,7 @@ export const PORTAL_NAV_ITEMS = {
   admin: [
     { id: 'dashboard', label: 'Dashboard', icon: 'dashboard' },
     { id: 'ai-assistant', label: 'AI Assistant', icon: 'smart_toy' },
+    { id: 'finops', label: 'FinOps & Quotas', icon: 'account_balance_wallet' },
     { id: 'llm-usage', label: 'LLM Usage', icon: 'receipt_long' },       
     { id: 'agent-traces', label: 'Agent Traces', icon: 'route' },       
     { id: 'students', label: 'Student Records', icon: 'group' },
@@ -35,6 +36,7 @@ export const PORTAL_NAV_ITEMS = {
   platform_admin: [
     { id: 'dashboard', label: 'Platform Overview', icon: 'dashboard' },
     { id: 'institutions', label: 'Institutions', icon: 'domain' },
+    { id: 'finops', label: 'AI FinOps & Quotas', icon: 'account_balance_wallet' },
   ]
 };
 

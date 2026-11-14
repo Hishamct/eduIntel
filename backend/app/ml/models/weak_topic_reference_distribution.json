@@ -1,0 +1,187 @@
+{
+  "model_name": "weak_topic",
+  "model_version": "1.0.0",
+  "reference_version": "1.0.0",
+  "sample_size": 1000,
+  "features": {
+    "attendance_rate": {
+      "bin_edges": [
+        0.0,
+        0.1,
+        0.2,
+        0.3,
+        0.4,
+        0.5,
+        0.6,
+        0.7,
+        0.8,
+        0.9,
+        1.0
+      ],
+      "expected_proportions": [
+        0.02,
+        0.03,
+        0.05,
+        0.05,
+        0.08,
+        0.12,
+        0.15,
+        0.2,
+        0.2,
+        0.1
+      ]
+    },
+    "homework_submission_rate": {
+      "bin_edges": [
+        0.0,
+        0.1,
+        0.2,
+        0.3,
+        0.4,
+        0.5,
+        0.6,
+        0.7,
+        0.8,
+        0.9,
+        1.0
+      ],
+      "expected_proportions": [
+        0.03,
+        0.04,
+        0.06,
+        0.07,
+        0.1,
+        0.15,
+        0.15,
+        0.2,
+        0.12,
+        0.08
+      ]
+    },
+    "topic_avg_score": {
+      "bin_edges": [
+        0.0,
+        10.0,
+        20.0,
+        30.0,
+        40.0,
+        50.0,
+        60.0,
+        70.0,
+        80.0,
+        90.0,
+        100.0
+      ],
+      "expected_proportions": [
+        0.01,
+        0.02,
+        0.05,
+        0.1,
+        0.15,
+        0.2,
+        0.2,
+        0.15,
+        0.08,
+        0.04
+      ]
+    },
+    "student_overall_avg": {
+      "bin_edges": [
+        0.0,
+        10.0,
+        20.0,
+        30.0,
+        40.0,
+        50.0,
+        60.0,
+        70.0,
+        80.0,
+        90.0,
+        100.0
+      ],
+      "expected_proportions": [
+        0.01,
+        0.02,
+        0.05,
+        0.1,
+        0.15,
+        0.2,
+        0.2,
+        0.15,
+        0.08,
+        0.04
+      ]
+    },
+    "relative_gap": {
+      "bin_edges": [
+        -100.0,
+        -50.0,
+        -25.0,
+        -10.0,
+        -5.0,
+        0.0,
+        5.0,
+        10.0,
+        25.0,
+        50.0,
+        100.0
+      ],
+      "expected_proportions": [
+        0.02,
+        0.05,
+        0.08,
+        0.15,
+        0.2,
+        0.2,
+        0.15,
+        0.08,
+        0.05,
+        0.02
+      ]
+    },
+    "subject_CHEMISTRY": {
+      "bin_edges": [
+        0.0,
+        0.5,
+        1.0
+      ],
+      "expected_proportions": [
+        0.75,
+        0.25
+      ]
+    },
+    "subject_COMPUTER SCIENCE": {
+      "bin_edges": [
+        0.0,
+        0.5,
+        1.0
+      ],
+      "expected_proportions": [
+        0.75,
+        0.25
+      ]
+    },
+    "subject_MATHEMATICS": {
+      "bin_edges": [
+        0.0,
+        0.5,
+        1.0
+      ],
+      "expected_proportions": [
+        0.75,
+        0.25
+      ]
+    },
+    "subject_PHYSICS": {
+      "bin_edges": [
+        0.0,
+        0.5,
+        1.0
+      ],
+      "expected_proportions": [
+        0.75,
+        0.25
+      ]
+    }
+  }
+}
