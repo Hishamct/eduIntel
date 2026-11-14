@@ -1,0 +1,7 @@
+[allowlist]
+description = "EduIntel allowlist for test fixtures and documentation"
+paths = [
+    '''backend/tests/.*''',
+    '''docs/database/schema-and-erd.md''',
+    '''database_design.md''',
+]

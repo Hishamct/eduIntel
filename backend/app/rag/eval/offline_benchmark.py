@@ -38,6 +38,7 @@ from app.rag.service import build_chroma_tenant_filter
 logger = logging.getLogger(__name__)
 
 DEFAULT_DATASET_PATH = Path(__file__).resolve().parent / "offline_eval_dataset.json"
+DEFAULT_FIXTURES_PATH = Path(__file__).resolve().parent / "offline_corpus_fixtures.json"
 CHROMA_PERSIST_DIR = Path(__file__).resolve().parent.parent.parent.parent / "chroma_data"
 
 
@@ -281,6 +282,8 @@ class OfflineRAGBenchmark:
         )
 
         # 1. Load from persistent disk chroma_data if available
+        loaded_portal = False
+        loaded_study = False
         if self.chroma_persist_dir.exists():
             disk_client = chromadb.PersistentClient(path=str(self.chroma_persist_dir))
             try:
@@ -292,6 +295,7 @@ class OfflineRAGBenchmark:
                         documents=p_items["documents"],
                         metadatas=p_items["metadatas"],
                     )
+                    loaded_portal = True
             except Exception as e:
                 logger.warning("Could not read disk portal_help_docs: %s", e)
 
@@ -307,8 +311,35 @@ class OfflineRAGBenchmark:
                     # Count legacy chunks missing institution_id
                     missing = sum(1 for m in s_items["metadatas"] if not m or "institution_id" not in m)
                     self._legacy_missing_tenant_count = missing
+                    loaded_study = True
             except Exception as e:
                 logger.warning("Could not read disk study_materials: %s", e)
+
+        # 1b. Fallback to offline corpus fixtures if disk data not found (e.g. clean CI runner)
+        if (not loaded_portal or not loaded_study) and DEFAULT_FIXTURES_PATH.exists():
+            try:
+                with open(DEFAULT_FIXTURES_PATH, encoding="utf-8") as f:
+                    fixtures = json.load(f)
+                if not loaded_portal and "portal_help_docs" in fixtures:
+                    p = fixtures["portal_help_docs"]
+                    if p.get("ids"):
+                        self.portal_col.add(
+                            ids=p["ids"],
+                            documents=p["documents"],
+                            metadatas=p["metadatas"],
+                        )
+                if not loaded_study and "study_materials" in fixtures:
+                    s = fixtures["study_materials"]
+                    if s.get("ids"):
+                        self.study_col.add(
+                            ids=s["ids"],
+                            documents=s["documents"],
+                            metadatas=s["metadatas"],
+                        )
+                        missing = sum(1 for m in s["metadatas"] if not m or "institution_id" not in m)
+                        self._legacy_missing_tenant_count = missing
+            except Exception as e:
+                logger.warning("Could not load offline corpus fixtures: %s", e)
 
         # 2. Add controlled multi-tenant test documents for Tenant A and Tenant B
         self._add_controlled_tenant_fixtures()
