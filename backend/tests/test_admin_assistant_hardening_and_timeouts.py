@@ -569,7 +569,7 @@ async def test_admin_contextvar_token_reset_on_success_error_timeout():
 
 
 @pytest.mark.asyncio
-async def test_admin_session_lifecycle_scenario_a_reproduction():
+async def test_admin_session_lifecycle_scenario_a_reproduction(test_engine):
     """
     Empirical 12-Step Reproduction of Scenario A for Admin Assistant:
     1. Turn 1 arrives with fence=1.
@@ -594,11 +594,14 @@ async def test_admin_session_lifecycle_scenario_a_reproduction():
         b. Lease acquired with fence=2.
         c. Turn 3 completes successfully (HTTP 200) and commits atomically with fence=2.
     """
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
     from app.agents.session_store import DatabaseSessionStore
     from app.auth.security import hash_password
-    from app.core.database import AsyncSessionLocal
     from app.institutions.models import InstitutionMembership
     from app.users.models import User
+
+    session_factory = async_sessionmaker(test_engine, expire_on_commit=False)
 
     inst_id = PILOT_INSTITUTION_UUID
     sess_id = uuid.uuid4()
@@ -611,7 +614,7 @@ async def test_admin_session_lifecycle_scenario_a_reproduction():
         is_active=True,
     )
 
-    async with AsyncSessionLocal() as db_init:
+    async with session_factory() as db_init:
         async with db_init.begin():
             db_init.add(admin_user)
             db_init.add(
@@ -630,7 +633,7 @@ async def test_admin_session_lifecycle_scenario_a_reproduction():
     mock_request = MagicMock()
     mock_request.app.dependency_overrides = {}
 
-    store = DatabaseSessionStore(session_factory=AsyncSessionLocal)
+    store = DatabaseSessionStore(session_factory=session_factory)
 
     # Pre-condition: Create session in DB
     await store.get_or_create_session(

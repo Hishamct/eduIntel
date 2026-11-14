@@ -370,6 +370,7 @@ class TestPasswordResetEmailAndConfig:
                 SMTP_PASSWORD="pwd",
                 EMAIL_FROM="noreply@eduintel.ai",
                 ENVIRONMENT="production",
+                ALLOW_UNMETERED_AI_TEST_BYPASS=False,
                 FRONTEND_BASE_URL="http://insecure.eduintel.ai",
             )
 
@@ -384,6 +385,7 @@ class TestPasswordResetEmailAndConfig:
             SMTP_PASSWORD="pwd",
             EMAIL_FROM="noreply@eduintel.ai",
             ENVIRONMENT="production",
+            ALLOW_UNMETERED_AI_TEST_BYPASS=False,
             FRONTEND_BASE_URL="https://app.eduintel.ai",
         )
         assert prod_settings.FRONTEND_BASE_URL == "https://app.eduintel.ai"
