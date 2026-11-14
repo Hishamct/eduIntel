@@ -23,6 +23,7 @@ from app.observability.quota import (
     QuotaExceededError,
     ReservationCreateRequest,
     TenantQuotaEngine,
+    resolve_tenant_usage_date,
 )
 from app.observability.quota_models import (
     AIPricingActivation,
@@ -141,7 +142,8 @@ class TestFinOpsRiskReserveAndConcurrency:
         )
 
         # Commit ₹89.60 of spend today
-        today = datetime.now(UTC).date()
+        now_as_of = datetime.now(UTC)
+        today = resolve_tenant_usage_date(quota_timezone=quota.quota_timezone, as_of=now_as_of)
         usage = TenantDailyAIUsage(
             id=uuid.uuid4(),
             institution_id=inst.id,
@@ -174,6 +176,7 @@ class TestFinOpsRiskReserveAndConcurrency:
                     reserved_output_tokens=10_000,
                     idempotency_key=f"idem-{uuid.uuid4()}",
                 ),
+                as_of=now_as_of,
                 db=session,
             )
         assert "exposure limit exceeded" in str(exc_info.value).lower()
@@ -194,7 +197,8 @@ class TestFinOpsRiskReserveAndConcurrency:
             risk_reserve_pct=Decimal("0.1000"),
         )
 
-        today = datetime.now(UTC).date()
+        now_as_of = datetime.now(UTC)
+        today = resolve_tenant_usage_date(quota_timezone=quota.quota_timezone, as_of=now_as_of)
         usage = TenantDailyAIUsage(
             id=uuid.uuid4(),
             institution_id=inst.id,
@@ -223,6 +227,7 @@ class TestFinOpsRiskReserveAndConcurrency:
                 reserved_output_tokens=100,
                 idempotency_key=f"idem-{uuid.uuid4()}",
             ),
+            as_of=now_as_of,
             db=session,
         )
         assert res is not None
@@ -244,7 +249,8 @@ class TestFinOpsRiskReserveAndConcurrency:
             ingestion_tokens=50_000,
         )
 
-        today = datetime.now(UTC).date()
+        now_as_of = datetime.now(UTC)
+        today = resolve_tenant_usage_date(quota_timezone=quota.quota_timezone, as_of=now_as_of)
         # Commit 10,000 tokens to interactive_ai
         daily_usage = TenantDailyAIUsage(
             id=uuid.uuid4(),
@@ -288,6 +294,7 @@ class TestFinOpsRiskReserveAndConcurrency:
                     reserved_output_tokens=500,
                     idempotency_key=f"idem-{uuid.uuid4()}",
                 ),
+                as_of=now_as_of,
                 db=session,
             )
         assert "quota exceeded" in str(exc_info.value).lower()
@@ -305,6 +312,7 @@ class TestFinOpsRiskReserveAndConcurrency:
                 reserved_output_tokens=0,
                 idempotency_key=f"idem-{uuid.uuid4()}",
             ),
+            as_of=now_as_of,
             db=session,
         )
         assert ingest_res is not None
