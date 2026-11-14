@@ -139,6 +139,8 @@ jobs:
       SMTP_USER: test@eduintel.local
       SMTP_PASSWORD: test-ci-smtp-password
       EMAIL_FROM: noreply@eduintel.local
+      ENABLE_TENANT_AI_QUOTAS: "true"
+      ALLOW_UNMETERED_AI_TEST_BYPASS: "true"
       PYTHONPATH: backend
 
     steps:
