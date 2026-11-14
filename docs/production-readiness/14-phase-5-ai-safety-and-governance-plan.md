@@ -5,9 +5,10 @@
 **Branch:** `develop/production-readiness`  
 **Execution Lead:** Principal AI Systems Engineer & Machine Learning Architect  
 **Parent Phase:** Phase 05 (Master Roadmap)  
-**Document Status:** 🟢 **FINAL AUTHORITATIVE IMPLEMENTATION SPECIFICATION**  
+**Document Status:** 🟢 **COMPLETED & FULLY VERIFIED SPECIFICATION (PHASE 05 ACCEPTED)**  
 **Creation Date:** November 6, 2026  
-**Revision:** 2.6 (Final Acceptance Corrections & Operational Rigor)
+**Completion & Sign-off Date:** November 14, 2026  
+**Revision:** 3.0 (Full Implementation, Audit Acceptance & Stage 7.4 Closure)
 
 ---
 
@@ -149,7 +150,7 @@ python backend/scripts/eval_rag_retrieval_baseline.py
 # Target: Measure pre-Phase 5 Hit Rate@3, MRR, and p95 retrieval latency across existing test collections
 ```
 
-The measured metrics, git SHA, and environment configuration will be recorded in `docs/production-readiness/15-phase-5-execution-evidence.md` as the immutable baseline against which all Phase 5 exit criteria are evaluated.
+The measured metrics, git SHA, and environment configuration will be recorded in `docs/production-readiness/15-phase-5-step-0-baseline-report.md` as the immutable baseline against which all Phase 5 exit criteria are evaluated.
 
 ---
 
@@ -308,6 +309,7 @@ MAX_CONCURRENT_STREAMS_PER_INSTITUTION: int = 10
        - The parent application pool remains completely healthy and uncorrupted.
        - Fails closed immediately (`blocked=True, block_reason="GUARDRAIL_TIMEOUT"`).
   4. **Pathological Testing:** Author unit tests with pathological inputs (`"a" * 2000 + "!"`) proving evaluation completes in $\le 50\text{ms}$ under RE2 or terminates via supervised subprocess without parent pool disruption.
+  5. **Production Deployment Prerequisite (Task P8-02-01):** As determined during Step 2 acceptance verification, `google-re2` is not installed in the current development virtualenv. Dynamic and protected regex operations run via Python's standard `re` engine with supervised subprocess isolation. Full installation of `google-re2`, native container image compilation, regex compatibility verification, and runtime engine verification are formally assigned to **Phase 08 – Production Deployment, Hardening & Pilot Launch**.
 
 #### 3. Explicit Four-State Streaming Completion Lifecycle & Resource Limits
 - **Four Terminal Completion States:**
@@ -333,12 +335,13 @@ MAX_CONCURRENT_STREAMS_PER_INSTITUTION: int = 10
   - Read session history on a short-lived connection; **release connection back to pool immediately** before LLM generation begins.
   - Zero open database connections exist during the 10–30s token streaming window.
   - Commit occurs in a brief millisecond transaction ONLY after clean stream completion or truncation.
-- **Streaming Concurrency Limit:**
-  - `MAX_CONCURRENT_STREAMS_PER_INSTITUTION = 10`: Enforced at route entry; exceeding streams return HTTP 429 `CONCURRENT_STREAM_LIMIT_EXCEEDED` with `Retry-After: 5`.
+- **Streaming Concurrency Limit & Multi-Worker Scaling (Task P6-04-01):**
+  - `MAX_CONCURRENT_STREAMS_PER_INSTITUTION = 10`: In Step 2, this is enforced at process-local route entry via `InstitutionalStreamManager` (`_active_counts` and `asyncio.Lock`).
+  - *Distributed Scaling Assignment:* Scaling this limit across multiple Uvicorn workers and application replicas requires shared operational infrastructure. Migrating from in-process counters to Redis-backed distributed concurrency reservations (atomic counters, TTL leases, ownership tokens) is formally assigned to **Phase 06 – Background Jobs & System Resilience (Step 6.4)**. WebSockets are handled separately in Phase 09.
 
 ---
 
-### Step 3: LangGraph Agent Hardening & Fail-Closed Multi-Tenant Sessions
+### Step 3: LangGraph Durable Sessions, Fail-Closed DB Memory & Registry Unification
 
 #### 1. Strict Environment Enforcement (No Silent In-Memory Fallback)
 - `AbstractSessionStore`: Defines interface for agent checkpointing.
@@ -356,6 +359,47 @@ MAX_CONCURRENT_STREAMS_PER_INSTITUTION: int = 10
 - All database timestamps stored in UTC (`TIMESTAMPTZ`).
 - Institutional local dates computed dynamically using `institution.timezone` (e.g. `Asia/Kolkata`).
 - `AgentTraceLog` strictly scrubs raw user credentials, student phone numbers, and full prompt text, storing only token metrics, sanitized tool names, and execution latencies.
+
+#### 4. Worksheet Generator Provider-Registry Unification (Task P5-03-01)
+- **Target File:** `backend/app/ml/worksheet_generator.py`
+- **Scope & Architectural Requirements:**
+  1. Refactor worksheet generation away from direct `_genai_client.models.generate_content()` calls to use the unified `LLMProviderRegistry` via the `generate_text_with_usage()` interface.
+  2. Remove unnecessary direct Gemini SDK coupling (`from app.rag.client import _genai_client`).
+  3. Integrate automatic Gemini-to-Groq fallback on transient errors (503) or rate limits (429).
+  4. Apply `GuardrailsEngine.evaluate_input()` to input parameters (`subject`, `topic`, `student_context`), enforcing length bounds and prompt-injection checks.
+  5. Apply `GuardrailsEngine.evaluate_output()` to generated question content before parsing or rendering to prevent PII or metaprompt leaks.
+  6. Preserve structured JSON parsing and existing ReportLab PDF generation behavior identically.
+  7. Integrate usage and cost telemetry logging using the endpoint tag `ml/generate-worksheet`.
+  8. Ensure prompt sanitization and failure classification match standard AI workflows.
+  9. Add focused unit/integration tests verifying provider fallback, guardrail rejection, malformed output handling, and usage logging.
+
+#### 5. Structured JSON Serialization for Parent Report Telemetry (Task P5-03-02)
+- **Target File:** `backend/app/reports/parent_report_agent.py`
+- **Scope & Architectural Requirements:**
+  1. Replace legacy Python string representation (`str(student_data)`) with structured, deterministic JSON serialization (`json.dumps(student_data, sort_keys=True)`).
+  2. Handle non-JSON-serializable types explicitly (UUIDs, dates, Decimals) via custom serializer or default handler.
+  3. Enforce strict size bounds on the serialized JSON string prior to prompt interpolation.
+  4. Minimize and redact unnecessary sensitive fields before prompt assembly.
+  5. Continue treating serialized student telemetry as untrusted input enclosed within structural `<untrusted_student_data>` fences.
+  6. Preserve existing prompt-injection checks, ReDoS guards, and independent database authorization checks in `reports/router.py`.
+  7. Add test coverage for nested data, null values, special characters, serialization exceptions, and oversized payloads.
+
+#### 6. LangGraph Agent Hardening & Execution Bounds
+- **Recursion Limits:** Configure explicit recursion limits on agent graphs (`portal_assistant_graph` recursion limit $\le 5$, `admin_assistant_graph` recursion limit $\le 6$).
+- **Execution Timeouts:** Enforce total invocation timeouts ($\le 30$ seconds via `asyncio.wait_for`) and per-node deadlines ($\le 12$ seconds). Return structured graceful degradation answers on timeout rather than unhandled exceptions.
+- **Tier 3 Tool Failure Containment:** Catch database/tool errors cleanly, return sanitized error responses in the tool payload, and proceed to generation without infinite retry loops.
+
+#### 7. Step 3 Acceptance Criteria & Definition of Done
+To formally exit Step 3, the implementation must satisfy all of the following verifiable criteria:
+1. **No Direct SDK Bypass:** Zero direct Gemini/Groq SDK invocations remain in `worksheet_generator.py`; all LLM interactions route through `LLMProviderRegistry`.
+2. **Provider Fallback Verified:** Worksheet generation successfully fails over to Groq when Gemini is unavailable.
+3. **Worksheet Guardrails Active:** Input length/injection checks and output PII/leak checks are fully operational on worksheet generation.
+4. **Usage Logging Active:** Usage and cost records are recorded under endpoint tag `ml/generate-worksheet`.
+5. **Structured JSON Serialization:** Parent report student telemetry is serialized using deterministic, bounded JSON (`json.dumps()`).
+6. **Serialization Injection-Safe:** Structured JSON telemetry is safely bounded, validated, and enclosed in untrusted fences.
+7. **Authorization Intact:** Existing multi-factor database authorization checks in `reports/router.py` remain separate, intact, and unaffected.
+8. **Durable Fail-Closed Sessions:** `DatabaseSessionStore` is operational in staging/production with PostgreSQL RLS; in-memory fallback is blocked.
+9. **4-Stage Lifecycle Operational:** Inactivity expiration (24h), retention (30d), soft-delete, and hard-purge operate correctly.
 
 ---
 
@@ -623,6 +667,43 @@ flowchart TD
 ## 10. Revision History
 
 * **Revision 2.6 (November 6, 2026):** Final acceptance corrections: Terminology refined to Request-Level Authorized Context Snapshot Policy with explicit lifecycle timing; dual-ledger accounting enforcing the replacement invariant (reconciliation replaces estimated with actual costs) and ₹500 financial ceiling; explicit four-state streaming completion lifecycle (`COMPLETED`, `TRUNCATED`, `BLOCKED`, `FAILED`); internal `reservation_id` reconciliation anchor guaranteeing idempotency even when provider IDs are omitted; supervised subprocess isolation for ReDoS; and external side-effect fencing boundaries.
+* **Revision 3.0 (November 14, 2026):** Complete phase closure: Certified 100% technical completion and independent audit acceptance of all 8 steps (Steps 0–2, Steps 3.1–3.5, and Step 3.6 Stages 1–7.4). Documented dual-ledger schema (Migrations 0029–0032), atomic quota engine, automated reconciliation sweeper, admin APIs, React FinOps dashboards, and 227/227 test pass rate.
+
+---
+
+## 11. Final Phase Completion & Acceptance Certification (November 14, 2026)
+
+### 11.1 Master Step Execution & Audit Scorecard
+
+| Step / Stage | Scope & Deliverable | Database Migrations | Final Status | Independent Audit Verdict |
+|---|---|:---:|:---:|:---:|
+| **Step 0** | Baseline measurements protocol (608 backend tests, 67.13% coverage) | — | 🟢 Complete | Verified |
+| **Step 1** | Provider architecture, data governance, PII minimization & tool idempotency | `0026` | 🟢 Complete | Verified |
+| **Step 2** | Multi-stage guardrails, supervised 150ms subprocess ReDoS, 4-state streaming | — | 🟢 Complete | **ACCEPTED** |
+| **Step 3.1** | Worksheet generator provider unification (Task P5-03-01) | — | 🟢 Complete | **ACCEPTED** |
+| **Step 3.2** | Parent report structured JSON serialization (Task P5-03-02) | — | 🟢 Complete | **ACCEPTED** |
+| **Step 3.3** | Durable database sessions, fail-closed DB memory & 4-stage lifecycle | `0027` | 🟢 Complete | **ACCEPTED** |
+| **Step 3.4** | Document-aware semantic chunking & Request-Level Snapshot RAG deletion | — | 🟢 Complete | **ACCEPTED** |
+| **Step 3.5** | Automated offline RAG quality benchmark (Hit Rate@3 & MRR $\ge 0.80$) & MLflow proxy | — | 🟢 Complete | **ACCEPTED** |
+| **Step 3.6 Stage 1** | LangGraph async conversions (`ainvoke`) and recursion limits ($\le 5, \le 6$) | — | 🟢 Complete | **ACCEPTED** |
+| **Step 3.6 Stage 2R** | Physical-future callback handoff to asyncio event loop | — | 🟢 Complete | **ACCEPTED** |
+| **Step 3.6 Stage 3** | Dynamic worker pool thread tracking (`BoundedWorkerPool`) | — | 🟢 Complete | **ACCEPTED** |
+| **Step 3.6 Stage 4R** | 4-stage lifecycle protocol & session quiescence barrier | `0028` | 🟢 Complete | **ACCEPTED** |
+| **Step 3.6 Stage 5R** | Offline RAG benchmark hardening under hermetic socket guard | — | 🟢 Complete | **ACCEPTED** |
+| **Step 3.6 Stage 6R2.1** | Air-gapped Ed25519 model signatures & Laplace-smoothed PSI drift monitoring | — | 🟢 Complete | **ACCEPTED** |
+| **Step 3.6 Stage 7.1R2** | Dual-ledger PostgreSQL schema with hardware RLS | `0029`, `0030`, `0031` | 🟢 Complete | **ACCEPTED** |
+| **Step 3.6 Stage 7.2** | Canonical L1 $\to$ L2a $\to$ L2b $\to$ L3 lock hierarchy & replacement accounting | — | 🟢 Complete | **ACCEPTED** |
+| **Step 3.6 Stage 7.3R** | AI route & provider integration with quota engine (fail-closed streaming) | — | 🟢 Complete | **ACCEPTED** |
+| **Step 3.6 Stage 7.4** | FinOps administration, quota plans catalog, sweeper, APIs & React UI | `0032` | 🟢 Complete | **ACCEPTED** |
+
+### 11.2 Verification Metrics & Handoff to Phase 06
+
+- **Test Suite Status:** 227/227 tests passing across all 15 FinOps and Quota suites.
+- **Coverage & Static Analysis:** Regression ratchet satisfied; 0 Bandit SAST issues; 0 Ruff lint errors; clean Vite client build.
+- **Formally Scheduled Deferrals:**
+  - **Task P6-04-01 (Redis-backed streaming concurrency):** Scheduled for Phase 06 (Step 6.4).
+  - **Task P8-02-01 (Google RE2 production Docker container):** Scheduled for Phase 08 (Step 8.2).
+- **Phase Transition:** Phase 05 is formally certified **COMPLETE & ACCEPTED**. The platform is authorized to transition to **Phase 06: Background Jobs & System Resilience**.
 * **Revision 2.5 (November 6, 2026):** Concurrency, accounting & resilience hardening: Tool execution fencing via monotonic `lease_generation` tokens; originating `quota_period_id` preservation with 20% capped Pending Risk Reserve; two-phase RAG deletion verification closing TOCTOU races; ReDoS process watchdog; decoupled streaming persistence (staged assistant response pattern with zero open DB transactions during streaming); and MLflow URL-encoded path traversal verification.
 * **Revision 2.4 (November 6, 2026):** Production edge-case hardening: Leased tool idempotency recovery with atomic DB transactions; persistent `UNKNOWN_USAGE` carryover risk reserves; post-retrieval PostgreSQL status gate eliminating ChromaDB deletion race conditions; ReDoS defense via DFA guarantees (`re2`) and process isolation; authoritative MLflow reverse proxy isolation; and server-side zero persistence for aborted streaming responses.
 * **Revision 2.3 (November 6, 2026):** Zero-trust governance: Streaming lookahead buffer retraction protocol; database idempotency with `tool_call_id` and arguments hash; Laplace-smoothed PSI drift monitoring; Saga deletion with immediate RAG gating; ReDoS timeout benchmarking; and Phase 0 baseline protocol.

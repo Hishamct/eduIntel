@@ -119,20 +119,43 @@ EduIntel uses **SHAP (SHapley Additive exPlanations)** with `shap.TreeExplainer`
 - **Algorithm**: Multi-label XGBoost classifier predicting student failure risk on specific curriculum topics (e.g., *Rotational Dynamics*, *Chemical Bonding*, *Integral Calculus*).
 - **Location**: [`backend/app/ml/models/weak_topic_model.joblib`](file:///home/dell/projects/eduIntel/backend/app/ml/models/weak_topic_model.joblib).
 
-### 4.2. Automated Worksheet Generation
+### 4.2. Automated Worksheet Generation (Unified Provider Registry)
 When a teacher or student requests remediation (`/api/ml/worksheet/generate`):
 1. The service looks up the student's predicted weak topics.
-2. The LLM client constructs a customized problem set targeting those specific concepts.
-3. Questions vary in difficulty (Easy $\to$ Medium $\to$ Hard) to rebuild conceptual mastery progressively.
-4. The generated worksheet is returned as formatted Markdown/PDF ready for printing or digital submission.
+2. In accordance with Phase 5 Step 3.1 (Task P5-03-01), `worksheet_generator.py` routes requests through `LLMProviderRegistry.generate_text_with_usage()`, eliminating direct unshielded SDK imports.
+3. Primary generation uses Google Gemini with automatic failover to Groq upon 429/503 errors.
+4. All prompts pass through `GuardrailsEngine.evaluate_input()` and generated JSON is verified with `GuardrailsEngine.evaluate_output()` before rendering.
+5. Questions vary in difficulty (Easy $\to$ Medium $\to$ Hard) to rebuild conceptual mastery progressively.
+6. Returns formatted Markdown and ReportLab PDF bytes ready for printing or digital submission.
+7. Token consumption is logged under category `ML_PREDICTION` with quota settlement.
 
 ---
 
-## 5. MLflow Experiment Tracking
+## 5. Air-Gapped Model Integrity & Feature Drift Monitoring (Phase 5 Step 3.6 Stage 6)
+
+### 5.1 Asymmetric Ed25519 Model Signatures (`manifest.json.sig`)
+To prevent model poisoning or unauthorized model weight substitution in production:
+- Model artifacts (`at_risk_model.joblib`) are packaged with a cryptographically signed manifest envelope (`manifest.json.sig`).
+- **Ed25519 Signatures:** Verified using pinned public key fingerprints (`settings.ML_MODEL_TRUSTED_KEY_FINGERPRINTS`).
+- **Cryptographic Binding:** Manifest binds model SHA-256 digest, feature bounds, model version, and the reference baseline distribution digest.
+- **Fail-Closed Gate:** Signature mismatch immediately blocks model loading with HTTP 503 rather than executing untrusted deserialization.
+
+### 5.2 Laplace-Smoothed Population Stability Index (PSI) Drift Monitoring
+To detect production covariate shift in student features (e.g. grading scale changes across academic terms):
+- **Formula:**
+  $$\text{PSI} = \sum_{b=1}^{B} \left( P_b - Q_b \right) \ln\left(\frac{P_b}{Q_b}\right)$$
+- **Laplace Smoothing:** Counts are smoothed with $\epsilon = 10^{-4}$ to avoid division by zero on unobserved buckets.
+- **Sample-Size Gate:** Requires $N_{\text{valid}} \ge 200$ valid numeric observations before issuing a production drift verdict.
+- **Alerting Threshold:** $\text{PSI} \ge 0.20$ triggers automated Slack/dashboard drift warnings without breaking live inferences.
+
+---
+
+## 6. MLflow Experiment Tracking
 
 Model training runs, hyperparameters, and evaluation metrics are recorded using MLflow:
 - **Tracking Database**: SQLite database located at `backend/mlflow.db`.
 - **Artifact Repository**: Stored in `backend/mlruns/`.
+- **Reverse Proxy Protection (Step 3.5):** Canonicalized path resolution preventing traversal attacks and validating tenant JWT tokens.
 - **Logged Metrics**: Precision, Recall, F1 Score, Log Loss, and ROC-AUC curve artifacts.
 - **Retraining Script**: Executed via `backend/venv/bin/python -m app.ml.train`.
 

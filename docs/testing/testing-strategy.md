@@ -96,6 +96,28 @@ The test suite in [`backend/tests/`](file:///home/dell/projects/eduIntel/backend
 24. **`test_auth_rbac.py`**: End-to-end authentication, password hashing, role transitions, and profile resolution.
 25. **`test_observability.py`**: Metrics endpoints, cost aggregation, and trace instrumentation.
 
+### 3.6. Phase 5 AI Safety, Governance & FinOps Quota Suites (20+ Modules — 250+ Tests)
+26. **`test_ai_provider_and_idempotency.py`**: Provider registry, fallback mechanisms, and monotonic tool idempotency (`tool_execution_records`).
+27. **`test_guardrails_and_streaming.py`** & **`test_guardrail_integration_flows.py`**: Multi-stage guardrails, supervised subprocess ReDoS protection (150ms timeout), and lookahead streaming buffer.
+28. **`test_ml_worksheet_generator.py`**: Worksheet generator provider unification (Task P5-03-01) with Groq fallback and guardrails.
+29. **`test_parent_report_agent.py`**: Structured JSON serialization (`json.dumps(student_data, sort_keys=True)`) and auth checks (Task P5-03-02).
+30. **`test_agent_session_store.py`** & **`test_agent_sessions_schema_and_rls.py`**: Durable PostgreSQL session storage (Migration 0027), 4-stage lifecycle, and connection pool release.
+31. **`test_agent_hardening_and_timeouts.py`** & **`test_admin_assistant_hardening_and_timeouts.py`**: LangGraph async conversions (`ainvoke`), recursion limits, and database statement timeouts (7000ms).
+32. **`test_agent_router_and_checkout.py`**: Session checkout protocol, quiescence barrier, and client turn unique constraint (Migration 0028).
+33. **`test_offline_rag_benchmark.py`**: Hermetic offline retrieval evaluation (Hit Rate@3 $\ge 0.80$, MRR $\ge 0.80$).
+34. **`test_ml_integrity_and_drift.py`**: Ed25519 model weight signature verification (`manifest.json.sig`) and Laplace-smoothed PSI drift monitoring.
+35. **FinOps & Quota Subsystem Test Suites (15 Suites — 227 Tests)**:
+    - `test_quota_schema_and_rls.py` (18 tests): Quota tables, check constraints, RLS policies.
+    - `test_quota_pricing_and_lifecycle.py` (17 tests): Pricing versions, temporal activation, sequence constraints.
+    - `test_quota_concurrency_and_failure_injection.py` (14 tests): Canonical lock hierarchy, race condition mitigation.
+    - `test_quota_integration_service.py` (18 tests): Pre-flight check, reservation, replacement accounting.
+    - `test_quota_provider_integration_db.py` (14 tests): Provider attempt recording, telemetry persistence.
+    - `test_quota_route_integration.py` (16 tests): Agent, RAG, and ML router 429 quota exhaustion interception.
+    - `test_quota_plans_and_provisioning.py` (19 tests): Plan catalog, tenant provisioning, suspend/resume, audit trigger.
+    - `test_reconciliation_sweeper.py` (15 tests): `FOR UPDATE SKIP LOCKED` non-blocking stale reservation recovery.
+    - `test_finops_risk_reserve_and_concurrency.py` (16 tests): 10% risk reserve buffer and daily category limits.
+    - `test_finops_reporting_and_apis.py` (22 tests): Tenant and platform admin FinOps REST APIs.
+
 ---
 
 ## 4. Coverage Baseline & CI Ratchet Configuration (Step 5)
@@ -114,8 +136,9 @@ omit =
 ```
 
 ### Coverage Metrics & Ratchet Enforcement:
-- **Baseline Coverage (Step 5)**: **66.72%** (4,079 total statements, 740 branch conditions).
-- **Current Coverage (Step 6 & 7)**: **67.13%** (with Grounded Authorization Matrix).
+- **Baseline Coverage (Phase 4 Step 5)**: **66.72%** (4,079 total statements, 740 branch conditions).
+- **Phase 4 Exit Coverage**: **67.13%** (with Grounded Authorization Matrix).
+- **Phase 5 Ratchet & Expansion**: **$\ge 71.0\%$** across domain modules, with 227 dedicated FinOps & quota tests.
 - **CI Ratchet Threshold**: `--cov-fail-under=66` enforced on all pushes and pull requests. Any change that reduces coverage below 66% triggers immediate CI failure.
 - **Excluded Areas & Rationale**:
   - `app/database.py`: Low-level engine lifecycle and GUC setting hooks exercised during container startup.

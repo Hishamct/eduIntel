@@ -1,6 +1,6 @@
 # EduIntel AI — API Route Inventory
 
-This inventory documents all **66 endpoints** across the **17 routers** mounted in the FastAPI application ([`backend/app/main.py`](file:///home/dell/projects/eduIntel/backend/app/main.py)) on branch `develop/production-readiness`.
+This inventory documents all **83 endpoints** across the **19 routers** mounted in the FastAPI application ([`backend/app/main.py`](file:///home/dell/projects/eduIntel/backend/app/main.py)) on branch `develop/production-readiness`.
 
 ---
 
@@ -19,10 +19,12 @@ This inventory documents all **66 endpoints** across the **17 routers** mounted 
 | **OCR Processing** | `/api/ocr` | 2 | Authenticated (`teacher`/`student`) |
 | **RAG & Vectors** | `/api/rag` | 4 | Authenticated (Tenant Scoped) |
 | **Machine Learning**| `/api/ml` | 4 | Authenticated (`teacher`/`admin`) |
-| **AI Agents** | `/api/admin/assistant`, `/api/portal/assistant` | 2 | `admin` / Authenticated (Tenant Scoped) |
+| **AI Agents & Sessions** | `/api/admin/assistant`, `/api/portal/assistant` | 4 | `admin` / Authenticated (Tenant Scoped) |
 | **Parent Reports** | `/api/reports` | 2 | `admin` / `teacher` (Tenant Scoped) |
 | **Observability** | `/api/observability`| 4 | `admin` (Tenant Scoped) |
-| **Total** | | **66** | |
+| **Tenant FinOps** | `/finops` | 5 | `admin` (Tenant Scoped) |
+| **Platform Admin FinOps** | `/platform-admin/finops` | 10 | Platform Admin |
+| **Total** | | **83** | |
 
 ---
 
@@ -171,7 +173,9 @@ This inventory documents all **66 endpoints** across the **17 routers** mounted 
 
 | Method | Path | Auth / Role | Description | Request Body | Response |
 |---|---|:---:|---|---|---|
-| `POST` | `/portal/assistant/query` | Authenticated | Chat with Portal Help Assistant | `HelpQueryRequest` (message) | `200 OK` (`HelpQueryResponse`) |
+| `POST` | `/portal/assistant/query` | Authenticated | Chat with Portal Help Assistant (token streaming, guardrails) | `HelpQueryRequest` (message) | `200 OK` (`HelpQueryResponse`) |
+| `GET` | `/portal/assistant/sessions` | Authenticated | List user's conversation sessions | None | `200 OK` (`List[SessionSummary]`) |
+| `DELETE` | `/portal/assistant/sessions/{session_id}` | Authenticated | Soft-delete conversation session | None | `200 OK` (`{"status": "deleted"}`) |
 | `POST` | `/agents/admin-assistant/chat` | `admin` | LangGraph Admin Assistant (tenant isolation, aggregation guard, SEC-09) | `AdminAssistantChatRequest` | `200 OK` (`AdminAssistantChatResponse`) |
 
 ---
@@ -193,4 +197,33 @@ This inventory documents all **66 endpoints** across the **17 routers** mounted 
 | `GET` | `/api/observability/traces` | `admin` | Query LangGraph agent trace logs | `?agent=admin_assistant` | `200 OK` (`List[TraceLogItem]`) |
 | `GET` | `/api/observability/rag-eval` | `admin` | Retrieve Ragas evaluation metrics | None | `200 OK` (`RAGEvalSummary`) |
 | `GET` | `/api/observability/audit-logs`| `admin` | Filter system & AI audit trail | `?user_id=uuid&limit=50` | `200 OK` (`List[AuditLogItem]`) |
+
+---
+
+## 14. Tenant FinOps Router (`/finops`)
+
+| Method | Path | Auth / Role | Description | Request Body | Response |
+|---|---|:---:|---|---|---|
+| `GET` | `/finops/usage/summary` | `admin` | Current day token & INR usage vs limits | None | `200 OK` (`TenantQuotaSummaryResponse`) |
+| `GET` | `/finops/usage/daily` | `admin` | 30-day historical daily token and INR cost breakdown | `?days=30` | `200 OK` (`List[DailyUsageItem]`) |
+| `GET` | `/finops/usage/categories` | `admin` | Usage breakdown by functional category | `?days=30` | `200 OK` (`List[CategoryUsageItem]`) |
+| `GET` | `/finops/plans/current` | `admin` | Active plan subscription tier, limits, and risk reserve | None | `200 OK` (`CurrentPlanResponse`) |
+| `GET` | `/finops/alerts` | `admin` | Active cost and usage threshold breach alerts | None | `200 OK` (`List[FinOpsAlertItem]`) |
+
+---
+
+## 15. Platform Admin FinOps Router (`/platform-admin/finops`)
+
+| Method | Path | Auth / Role | Description | Request Body | Response |
+|---|---|:---:|---|---|---|
+| `GET` | `/platform-admin/finops/plans` | Platform Admin | Catalog of all available subscription quota plans | None | `200 OK` (`List[AIQuotaPlanResponse]`) |
+| `POST` | `/platform-admin/finops/plans` | Platform Admin | Create new AI quota plan in catalog | `AIQuotaPlanCreate` | `201 Created` (`AIQuotaPlanResponse`) |
+| `PUT` | `/platform-admin/finops/plans/{plan_id}` | Platform Admin | Update plan limits and active status | `AIQuotaPlanUpdate` | `200 OK` (`AIQuotaPlanResponse`) |
+| `GET` | `/platform-admin/finops/quotas` | Platform Admin | Global tenant quota overview with usage stats | `?limit=50&offset=0` | `200 OK` (`TenantQuotaListResponse`) |
+| `POST` | `/platform-admin/finops/quotas/{institution_id}/provision` | Platform Admin | Provision or reassign plan for tenant | `ProvisionQuotaRequest` | `200 OK` (`TenantAIQuotaResponse`) |
+| `POST` | `/platform-admin/finops/quotas/{institution_id}/suspend` | Platform Admin | Suspend AI access for tenant | `SuspendQuotaRequest` | `200 OK` (`TenantAIQuotaResponse`) |
+| `POST` | `/platform-admin/finops/quotas/{institution_id}/resume` | Platform Admin | Resume AI access for suspended tenant | `ResumeQuotaRequest` | `200 OK` (`TenantAIQuotaResponse`) |
+| `POST` | `/platform-admin/finops/reconciliation/run` | Platform Admin | Trigger background sweep of orphaned reservations | None | `200 OK` (`ReconciliationSweeperResult`) |
+| `POST` | `/platform-admin/finops/reconciliation/manual-settle` | Platform Admin | Post manual financial adjustment to tenant ledger | `ManualSettlementRequest` | `200 OK` (`FinancialAdjustmentResponse`) |
+| `GET` | `/platform-admin/finops/audit-trail` | Platform Admin | Query immutable provisioning & settlement audit logs | `?institution_id=...&limit=50` | `200 OK` (`List[ProvisioningAuditLogItem]`) |
 

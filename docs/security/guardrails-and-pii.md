@@ -110,8 +110,31 @@ CREATE TABLE audit_logs (
 );
 ```
 
-### Immutability & Privacy Rules:
-1. **No UPDATE or DELETE**: No API routes or ORM models provide update or delete methods for `audit_logs`.
-2. **Zero Plaintext PII**: Any message snippets stored in `details_json` have already undergone regex PII redaction.
-3. **Admin Visibility**: Accessible only by administrators via `/api/observability/audit-logs`.
+---
+
+## 6. Phase 5 Multi-Stage Guardrail Engine & ReDoS Protection
+
+In Phase 5 Step 2, heuristic guardrails were unified into a production-grade `GuardrailsEngine` ([`backend/app/guardrails/engine.py`](file:///home/dell/projects/eduIntel/backend/app/guardrails/engine.py)):
+
+### 6.1 Policy Modes
+- **`STRICT`**: Aggressive blocking of all suspicious injection, metaprompt inquiries, and PII.
+- **`BALANCED`**: Standard educational policy balancing student learning with prompt safety.
+- **`PERMISSIVE`**: Developer/testing mode with relaxed bounding.
+- **`EXAM`**: Locked mode preventing any external or guidance assistance during live examination sessions.
+
+### 6.2 Supervised Subprocess ReDoS Guard (`redos_guard.py`)
+To prevent Regular Expression Denial of Service (ReDoS) attacks on regex evaluation:
+- **Fast-Path ($\le 1024$ characters):** Executes directly in-process with minimal overhead.
+- **Supervised Subprocess ($> 1024$ characters):** Dispatches pattern evaluation to an isolated standalone worker process.
+- **Strict 150ms Timeout:** If evaluation exceeds 150ms, the parent kills the subprocess with `SIGTERM`/`SIGKILL` and spawns a fresh worker.
+- **Pool State Preservation:** Unlike `ProcessPoolExecutor` (which breaks the pool on worker termination), the standalone supervised subprocess prevents `BrokenProcessPool` errors, keeping the parent FastAPI application uncorrupted.
+
+### 6.3 Dynamic Lookahead Streaming Buffer & 4-State Lifecycle
+- Streaming token emissions pass through a lookahead sliding buffer (256–512 characters) checking for prompt leakage or PII before characters reach the client's screen.
+- Responses follow an explicit 4-state completion lifecycle:
+  1. `COMPLETED`: Clean generation finishing naturally.
+  2. `TRUNCATED`: Reached length ceiling (2,048 tokens / 64 KB); emits `event: truncated` SSE event.
+  3. `BLOCKED`: Guardrail violation detected mid-stream; retracts uncommitted buffer and emits `event: blocked`.
+  4. `FAILED`: Upstream provider error or connection drop.
+- Staged assistant response persistence ensures zero open database transactions during token streaming.
 

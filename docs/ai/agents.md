@@ -112,7 +112,40 @@ Implemented in [`backend/app/mcp/server.py`](file:///home/dell/projects/eduIntel
 
 ---
 
-## 5. Agent Trace Logging & Observability
+## 5. Phase 5 Hardened Infrastructure, Concurrency & Lifecycle Architecture
+
+During Phase 5, the agent subsystems were completely hardened against event loop starvation, thread orphanages, and state race conditions:
+
+### 5.1 Async Graph Execution & Recursion Bounds
+- Both `portal_assistant_graph` and `admin_assistant_graph` execute natively on the asyncio event loop via `ainvoke(...)`.
+- Recursion limits are strictly bounded to prevent infinite tool execution loops:
+  - `portal_assistant_graph`: Recursion limit $\le 5$.
+  - `admin_assistant_graph`: Recursion limit $\le 6$.
+
+### 5.2 Durable PostgreSQL Session Store & 4-Stage Lifecycle (Migration 0027)
+- Replaced ephemeral in-memory memory with `DatabaseSessionStore` backed by `agent_sessions` and `agent_session_messages`.
+- **Fail-Closed DB Gate:** In staging and production, missing database connectivity returns HTTP 503 instead of falling back to insecure in-memory stores.
+- **Connection Pool Decoupling:** Database connections are acquired for short read/write cycles and **released back to the pool immediately** during external LLM token generation.
+- **4-Stage Session Lifecycle:**
+  1. *Inactivity Expiration (24h):* Active sessions expire after 24 hours of inactivity.
+  2. *Retention Window (30d):* Sessions older than 30 days are scheduled for cleanup.
+  3. *User Soft-Delete:* Users can soft-delete sessions (`is_deleted = True`), immediately hiding them from the UI.
+  4. *Automated Permanent Purge:* Cascading deletion cleanses expired messages and sessions permanently.
+
+### 5.3 Physical Worker Thread Tracking & Session Quiescence Barrier (Migration 0028)
+- `BoundedWorkerPool` wraps thread pool execution with dynamic OS thread tracking and clean queue rejection.
+- **Safe Future Handoff:** Native OS thread futures resolve cleanly back into the asyncio event loop without orphaned thread leaks.
+- **Session Quiescence Barrier:** Prevents concurrent checkout race conditions where a new request checks out a session while an older worker is still finishing.
+- **Turn Idempotency:** Migration `0028` introduced the partial unique index `uq_assistant_client_turn_session`, preventing duplicate assistant message insertion on retried client turns.
+
+### 5.4 Pre-Flight Quota Reservation & Bounded Streaming
+- All agent turns invoke `QuotaIntegrationService` before dispatching prompts to LLM providers.
+- Bounded token reservations are locked in `tenant_ai_quotas` and settled after stream completion via the canonical Level 1 $\to$ Level 3 lock hierarchy.
+- Length-truncated responses are explicitly recorded with `status = 'TRUNCATED'` and emit SSE `event: truncated`.
+
+---
+
+## 6. Agent Trace Logging & Observability
 
 Every agent step is captured in the `agent_trace_logs` table:
 ```python
@@ -127,5 +160,5 @@ trace = AgentTraceLog(
     cost_inr=0.038
 )
 ```
-Administrators can inspect full reasoning trajectories and costs in the Admin Portal under Observability.
+Administrators can inspect full reasoning trajectories, token consumption, and INR costs in the Admin Portal under Observability.
 
