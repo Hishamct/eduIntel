@@ -199,19 +199,16 @@ class TestReadOnlyCrossTenantRLSPolicy:
         )
         conn = await asyncpg.connect(test_url)
 
-        # 1. Provision unprivileged application role eduintel_app (NOSUPERUSER, NOBYPASSRLS)
+        # 1. Verify unprivileged application role eduintel_app exists without privilege escalation
         await conn.execute("""
             DO $$
             BEGIN
               IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'eduintel_app') THEN
-                CREATE ROLE eduintel_app WITH LOGIN NOSUPERUSER NOBYPASSRLS;
+                CREATE ROLE eduintel_app WITH LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT;
               END IF;
             END
             $$;
             GRANT USAGE ON SCHEMA public TO eduintel_app;
-            GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO eduintel_app;
-            GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO eduintel_app;
-            GRANT eduintel TO eduintel_app;
         """)
 
         async with conn.transaction():
