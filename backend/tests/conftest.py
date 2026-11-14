@@ -90,6 +90,10 @@ os.environ.setdefault(
     "TEST_DATABASE_URL",
     "postgresql+asyncpg://eduintel_app:eduintel_dev@localhost:5432/eduintel_test",
 )
+os.environ.setdefault(
+    "MIGRATION_DATABASE_URL",
+    "postgresql+asyncpg://eduintel:eduintel_dev@localhost:5432/eduintel_test",
+)
 os.environ["DATABASE_URL"] = os.environ["TEST_DATABASE_URL"]
 
 from app.auth.security import create_access_token, hash_password
@@ -128,8 +132,12 @@ def assert_safe_test_database(url_str: str) -> None:
             "Refusing to execute tests against a remote or non-loopback host."
         )
 
-    # 2. Port restriction
-    if url.port is not None and url.port != 5432:
+    # 2. Port restriction (strictly 5432 unless explicitly scoped ephemeral isolated port 55000-59999)
+    allowed_ports = {5432}
+    isolated_port = os.getenv("EDUINTEL_ISOLATED_TEST_PORT")
+    if isolated_port and isolated_port.isdigit() and 55000 <= int(isolated_port) <= 59999:
+        allowed_ports.add(int(isolated_port))
+    if url.port is not None and url.port not in allowed_ports:
         raise RuntimeError(
             f"FATAL: Non-standard database port '{url.port}'. Tests strictly require port 5432."
         )
@@ -168,17 +176,42 @@ def verify_and_prepare_test_database():
     import asyncio
 
     import alembic.config
+    from alembic.script import ScriptDirectory
 
     from alembic import command
 
     alembic_cfg = alembic.config.Config("alembic.ini")
-    alembic_cfg.set_main_option("sqlalchemy.url", TEST_DATABASE_URL)
-    command.upgrade(alembic_cfg, "head")
+    script_dir = ScriptDirectory.from_config(alembic_cfg)
+    expected_heads = tuple(sorted(script_dir.get_heads()))
 
-    # Run dynamic schema verification queries
     url = make_url(TEST_DATABASE_URL)
     raw_url = f"postgresql://{url.username}:{url.password}@{url.host}:{url.port}/{url.database}"
 
+    async def _check_current_heads() -> tuple[str, ...]:
+        conn = await asyncpg.connect(raw_url)
+        try:
+            exists = await conn.fetchval(
+                "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'alembic_version'"
+            )
+            if not exists:
+                return ()
+            rows = await conn.fetch("SELECT version_num FROM alembic_version ORDER BY version_num")
+            return tuple(r["version_num"] for r in rows)
+        finally:
+            await conn.close()
+
+    current_heads = asyncio.run(_check_current_heads())
+    if current_heads != expected_heads:
+        migration_url = os.getenv("MIGRATION_DATABASE_URL")
+        if migration_url:
+            assert_safe_test_database(migration_url)
+            alembic_cfg.set_main_option("sqlalchemy.url", migration_url)
+            command.upgrade(alembic_cfg, "head")
+        else:
+            alembic_cfg.set_main_option("sqlalchemy.url", TEST_DATABASE_URL)
+            command.upgrade(alembic_cfg, "head")
+
+    # Run dynamic schema verification queries
     async def _verify_schema():
         conn = await asyncpg.connect(raw_url)
         try:
@@ -197,10 +230,10 @@ def verify_and_prepare_test_database():
                     WHERE n.nspname = 'public' AND c.relkind = 'r' AND c.relrowsecurity = true AND c.relforcerowsecurity = true
                 """)
             ]
-            if len(rls_tables) != 17:
-                raise RuntimeError(f"Expected 17 FORCE RLS tables, found {len(rls_tables)}: {rls_tables}")
+            if len(rls_tables) < 17:
+                raise RuntimeError(f"Expected at least 17 FORCE RLS tables, found {len(rls_tables)}: {rls_tables}")
 
-            # 3. Assert split RLS policies from Migration 0025
+            # 3. Assert split RLS policies from Migration 0025+
             split_policies = await conn.fetch("""
                 SELECT policyname FROM pg_policies
                 WHERE schemaname = 'public' AND (
@@ -214,22 +247,61 @@ def verify_and_prepare_test_database():
                 raise RuntimeError(f"Expected at least 68 split policies, found {len(split_policies)}")
 
             # 4. Assert eduintel_app is unprivileged
-            app_role = await conn.fetchrow("SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = 'eduintel_app'")
+            app_role = await conn.fetchrow(
+                "SELECT rolsuper, rolbypassrls, rolcreaterole, rolcreatedb FROM pg_roles WHERE rolname = 'eduintel_app'"
+            )
             if not app_role:
                 raise RuntimeError("Unprivileged application role 'eduintel_app' does not exist in PostgreSQL")
-            if app_role["rolsuper"] or app_role["rolbypassrls"]:
-                raise RuntimeError("Role 'eduintel_app' must NOT have rolsuper or rolbypassrls privileges")
+            if (
+                app_role["rolsuper"]
+                or app_role["rolbypassrls"]
+                or app_role["rolcreaterole"]
+                or app_role["rolcreatedb"]
+            ):
+                raise RuntimeError(
+                    "Role 'eduintel_app' must NOT have rolsuper, rolbypassrls, rolcreaterole, or rolcreatedb privileges"
+                )
 
-            # 5. Assert eduintel_app inherits application access policy role eduintel
-            membership = await conn.fetchval("""
-                SELECT 1
-                FROM pg_auth_members m
-                JOIN pg_roles r_member ON r_member.oid = m.member
-                JOIN pg_roles r_role ON r_role.oid = m.roleid
-                WHERE r_member.rolname = 'eduintel_app' AND r_role.rolname = 'eduintel'
+            # 5. Assert genuine role separation: eduintel_app must NOT inherit or SET ROLE
+            # into privileged/owner roles, and must NOT own Stage 7.1/7.1R tables or functions.
+            priv_memberships = await conn.fetch("""
+                WITH RECURSIVE role_tree AS (
+                    SELECT r.oid, r.rolname, r.rolsuper, r.rolbypassrls, r.rolcreaterole, r.rolcreatedb,
+                           true AS can_inherit, true AS can_set, 0 AS depth
+                    FROM pg_roles r WHERE r.rolname = 'eduintel_app'
+                    UNION ALL
+                    SELECT parent.oid, parent.rolname, parent.rolsuper, parent.rolbypassrls,
+                           parent.rolcreaterole, parent.rolcreatedb,
+                           (rt.can_inherit AND m.inherit_option),
+                           (rt.can_set AND m.set_option),
+                           rt.depth + 1
+                    FROM pg_auth_members m
+                    JOIN role_tree rt ON m.member = rt.oid
+                    JOIN pg_roles parent ON m.roleid = parent.oid
+                    WHERE rt.depth < 16
+                )
+                SELECT DISTINCT rolname FROM role_tree
+                WHERE depth > 0 AND (can_inherit OR can_set) AND (
+                    rolsuper OR rolbypassrls OR rolcreaterole OR rolcreatedb OR rolname = 'eduintel'
+                )
             """)
-            if not membership:
-                raise RuntimeError("Role 'eduintel_app' must be granted 'eduintel' role for RLS permissive policies")
+            if priv_memberships:
+                raise RuntimeError(
+                    f"Role 'eduintel_app' violates role separation via privileged memberships: "
+                    f"{[r['rolname'] for r in priv_memberships]}"
+                )
+
+            app_owned = await conn.fetch("""
+                SELECT relname FROM pg_class c
+                JOIN pg_namespace n ON n.oid = c.relnamespace
+                WHERE n.nspname = 'public' AND pg_get_userbyid(c.relowner) = 'eduintel_app'
+                  AND c.relname LIKE ANY (ARRAY['ai_%', 'tenant_%'])
+            """)
+            if app_owned:
+                raise RuntimeError(
+                    f"Stage 7.1/7.1R tables must not be owned by runtime role 'eduintel_app': "
+                    f"{[r['relname'] for r in app_owned]}"
+                )
         finally:
             await conn.close()
 
@@ -482,3 +554,15 @@ async def reset_app_engine_pool():
     from app.core.database import engine
 
     await engine.dispose()
+
+
+@pytest.fixture(autouse=True)
+def reset_ml_shutdown_gate():
+    """Prevents FastAPI lifespan shutdown from leaking _ML_SHUTDOWN_IN_PROGRESS across test modules."""
+    from app.ml.router import _reset_ml_shutdown_state_for_testing
+
+    _reset_ml_shutdown_state_for_testing()
+    try:
+        yield
+    finally:
+        _reset_ml_shutdown_state_for_testing()

@@ -158,13 +158,13 @@ jobs:
             DO \$\$
             BEGIN
               IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'eduintel_app') THEN
-                CREATE ROLE eduintel_app WITH LOGIN PASSWORD 'eduintel_dev' NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE;
+                CREATE ROLE eduintel_app WITH LOGIN PASSWORD 'eduintel_dev' NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT;
+              ELSE
+                ALTER ROLE eduintel_app WITH LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT;
               END IF;
             END \$\$;
+            REVOKE CREATE ON SCHEMA public FROM PUBLIC, eduintel_app;
             GRANT USAGE ON SCHEMA public TO eduintel_app;
-            GRANT eduintel TO eduintel_app;
-            ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO eduintel_app;
-            ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO eduintel_app;
           "
 
       - name: Install Python Dependencies
@@ -177,13 +177,10 @@ jobs:
           cd backend
           alembic upgrade head
 
-      - name: Grant Migrated Table Permissions to eduintel_app
+      - name: Run Offline RAG Retrieval Benchmark
         run: |
-          PGPASSWORD=eduintel_dev psql -h localhost -p 5432 -U eduintel -d eduintel_test -c "
-            GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO eduintel_app;
-            GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO eduintel_app;
-            GRANT eduintel TO eduintel_app;
-          "
+          cd backend
+          python -m scripts.eval_rag_retrieval_offline --json-output app/rag/eval/offline_retrieval_benchmark_results.json
 
       - name: Run Pytest Test Suite with Coverage Ratchet
         env:
