@@ -1,0 +1,89 @@
+{
+  "model_name": "weak_topic",
+  "model_version": "1.0.0",
+  "artifact_filename": "weak_topic_model.joblib",
+  "sha256": "e0f386a4ec283f8144c2efef101c797cc99ffe3418f81321d92dc48db46b80c1",
+  "algorithm": "xgboost.XGBClassifier",
+  "feature_schema_version": "1.0",
+  "created_at": "2026-11-06T00:00:00Z",
+  "features": [
+    {
+      "name": "attendance_rate",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "order": 0
+    },
+    {
+      "name": "homework_submission_rate",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "order": 1
+    },
+    {
+      "name": "topic_avg_score",
+      "type": "float",
+      "min": 0.0,
+      "max": 100.0,
+      "order": 2
+    },
+    {
+      "name": "student_overall_avg",
+      "type": "float",
+      "min": 0.0,
+      "max": 100.0,
+      "order": 3
+    },
+    {
+      "name": "relative_gap",
+      "type": "float",
+      "min": -100.0,
+      "max": 100.0,
+      "order": 4
+    },
+    {
+      "name": "subject_CHEMISTRY",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "order": 5
+    },
+    {
+      "name": "subject_COMPUTER SCIENCE",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "order": 6
+    },
+    {
+      "name": "subject_MATHEMATICS",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "order": 7
+    },
+    {
+      "name": "subject_PHYSICS",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "order": 8
+    }
+  ],
+  "compatibility": {
+    "python": ">=3.11",
+    "xgboost": ">=2.0.0"
+  },
+  "metadata": {
+    "domain": "eduintel_weak_topic",
+    "release_stage": "production"
+  },
+  "key_id": "eduintel-ml-signer-2026-v1",
+  "reference_distribution": {
+    "filename": "weak_topic_reference_distribution.json",
+    "sha256": "73cdff36b59f2d70c78472782e223f707daa8ad9efa2778fb544405fe67378a9",
+    "version": "1.0.0"
+  },
+  "signature": "I0m4uhATTSAifrDjYnsQrC+0M4XriDq0oDZK1nfW0crGZU8GAmpAUDIk84bKMWs116JyklCoNdG/54lwKFa3DQ=="
+}
