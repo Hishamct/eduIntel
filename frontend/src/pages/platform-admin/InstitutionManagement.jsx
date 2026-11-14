@@ -172,6 +172,10 @@ export default function InstitutionManagement() {
         onSelect={(itemId) => {
           if (itemId === "dashboard") {
             navigate("/platform-admin/dashboard");
+          } else if (itemId === "institutions") {
+            navigate("/platform-admin/institutions");
+          } else if (itemId === "finops") {
+            navigate("/platform-admin/finops");
           }
         }}
       />

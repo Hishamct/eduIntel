@@ -26,6 +26,8 @@ import LlmUsage from "./pages/admin/LlmUsage";
 import AgentTraces from "./pages/admin/AgentTraces";
 import PlatformDashboard from "./pages/platform-admin/PlatformDashboard";
 import InstitutionManagement from "./pages/platform-admin/InstitutionManagement";
+import FinOpsDashboard from "./pages/admin/FinOpsDashboard";
+import PlatformFinOps from "./pages/platform-admin/PlatformFinOps";
 
 
 function App() {
@@ -151,6 +153,14 @@ function App() {
           }
         />
         <Route
+          path="/admin/finops"
+          element={
+            <ProtectedRoute>
+              <FinOpsDashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/admin/agent-traces"
           element={
             <ProtectedRoute>
@@ -220,6 +230,14 @@ function App() {
           element={
             <ProtectedRoute requirePlatformAdmin={true}>
               <InstitutionManagement />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/platform-admin/finops"
+          element={
+            <ProtectedRoute requirePlatformAdmin={true}>
+              <PlatformFinOps />
             </ProtectedRoute>
           }
         />
